@@ -90,6 +90,7 @@ func main() {
 	conversations := postgres.NewConversationRepository(db)
 	messages := postgres.NewMessageRepository(db)
 	citations := postgres.NewCitationRepository(db)
+	chunks := postgres.NewChunkRepository(db)
 
 	// ── Application services ───────────────────────────────────────────────
 	authService := authapp.NewService(users, workspaces, refreshTokens, cfg.Auth.JWTSigningKey)
@@ -105,6 +106,7 @@ func main() {
 	if vectors != nil {
 		chatService = chatapp.NewService(
 			conversations, messages, citations, projects,
+			courses, chunks,
 			aiClient, vectors, aiClient,
 			cfg.Flags.MaxEvaluatorRetries, ids,
 		)

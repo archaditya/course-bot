@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"course-assistant/internal/domain/entities"
@@ -24,6 +25,8 @@ type Service struct {
 	messages      repository.MessageRepository
 	citations     repository.CitationRepository
 	projects      repository.ProjectRepository
+	courses       repository.CourseRepository // workspace-isolation check on course_id
+	chunks        repository.ChunkRepository  // fetch real content for grounding + citations
 	aiClient      *llm.Client
 	guardrails    provider.GuardrailProvider
 	evaluator     provider.EvaluatorProvider
@@ -39,6 +42,8 @@ func NewService(
 	messages repository.MessageRepository,
 	citations repository.CitationRepository,
 	projects repository.ProjectRepository,
+	courses repository.CourseRepository,
+	chunks repository.ChunkRepository,
 	aiClient *llm.Client,
 	vectors provider.VectorStore,
 	embedder provider.EmbeddingProvider,
@@ -50,6 +55,8 @@ func NewService(
 		messages:      messages,
 		citations:     citations,
 		projects:      projects,
+		courses:       courses,
+		chunks:        chunks,
 		aiClient:      aiClient,
 		guardrails:    aiClient, // llm.Client implements GuardrailProvider
 		evaluator:     aiClient, // llm.Client implements EvaluatorProvider
@@ -119,6 +126,15 @@ func (s *Service) Send(
 	}
 	_ = conv
 
+	// Verify the course being queried also belongs to this workspace — the
+	// conversation check above does NOT cover this: course_id arrives as a
+	// caller-supplied field on every request, so without this check a user
+	// could query vectors from a course outside their workspace.
+	// See docs/08-security.md#workspace-isolation.
+	if _, err := s.courses.GetByID(ctx, ws, courseID); err != nil {
+		return nil, fmt.Errorf("chat: course access denied: %w", err)
+	}
+
 	// Persist user message
 	userMsg := &entities.Message{
 		ID:             chatNewID(),
@@ -168,17 +184,35 @@ func (s *Service) Send(
 		}, nil
 	}
 
-	// ── Rerank ────────────────────────────────────────────────────────────
-	candidates := make([]provider.RerankCandidate, len(searchResults))
+	// ── Fetch real chunk content from Postgres ─────────────────────────────
+	// Qdrant only ever stores chunk_id + minimal filter payload (docs/07-storage.md);
+	// the actual content, title, and timestamps live in Postgres. Without this
+	// fetch, both reranking and generation have no real course material to work
+	// with — this is the join step the pipeline depends on.
+	chunkIDs := make([]string, len(searchResults))
 	for i, r := range searchResults {
-		candidates[i] = provider.RerankCandidate{ChunkID: r.ChunkID}
+		chunkIDs[i] = r.ChunkID
 	}
-	// (Content would be fetched from Postgres for full reranking — simplified
-	// here; the AI service reranker uses chunk_id references.)
+	fetchedChunks, err := s.chunks.GetByIDs(ctx, chunkIDs)
+	if err != nil {
+		return nil, fmt.Errorf("chat: fetch chunk content: %w", err)
+	}
+	chunkByID := make(map[string]*entities.Chunk, len(fetchedChunks))
+	for _, c := range fetchedChunks {
+		chunkByID[c.ID] = c
+	}
+
+	// ── Rerank ────────────────────────────────────────────────────────────
+	candidates := make([]provider.RerankCandidate, 0, len(searchResults))
+	for _, r := range searchResults {
+		if c, ok := chunkByID[r.ChunkID]; ok {
+			candidates = append(candidates, provider.RerankCandidate{ChunkID: c.ID, Content: c.Content})
+		}
+	}
 	ranked, err := s.aiClient.Rerank(ctx, userContent, candidates)
 	if err != nil {
 		log.Printf("chat: rerank: %v (continuing with unranked)", err)
-		// non-fatal; use original order
+		// non-fatal; use original vector-search order
 		ranked = make([]provider.RankedChunk, len(searchResults))
 		for i, r := range searchResults {
 			ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
@@ -192,8 +226,25 @@ func (s *Service) Send(
 	}
 	ranked = ranked[:topK]
 
-	// Build context string for generation
-	context_ := userContent // simplified; in full impl fetch chunk content from Postgres
+	// Resolve the final ranked chunk_ids back to their full Chunk rows, in
+	// ranked order — this order drives both the generation context and the
+	// citations returned to the client.
+	rankedChunks := make([]*entities.Chunk, 0, len(ranked))
+	for _, rc := range ranked {
+		if c, ok := chunkByID[rc.ChunkID]; ok {
+			rankedChunks = append(rankedChunks, c)
+		}
+	}
+
+	// Build context string for generation from real course content.
+	var contextBuilder strings.Builder
+	for i, c := range rankedChunks {
+		fmt.Fprintf(&contextBuilder, "--- Excerpt %d ---\n%s\n\n", i+1, c.Content)
+	}
+	context_ := contextBuilder.String()
+	if context_ == "" {
+		context_ = "No relevant course material was found for this question."
+	}
 
 	// ── Generate with bounded retry loop ──────────────────────────────────
 	// docs/05-query-pipeline.md: retry up to maxRetries if evaluator score < threshold
@@ -272,20 +323,31 @@ func (s *Service) Send(
 	}
 
 	// ── Persist citations ──────────────────────────────────────────────────
-	cits := make([]*entities.Citation, len(ranked))
-	citResults := make([]CitationResult, len(ranked))
-	for i, rc := range ranked {
+	// Built from rankedChunks (real Chunk rows), not bare chunk IDs, so both
+	// the DB row and the client-facing result carry the real timestamp/page
+	// and document/title info — this is what powers the clickable
+	// timestamp-citation UI element.
+	cits := make([]*entities.Citation, len(rankedChunks))
+	citResults := make([]CitationResult, len(rankedChunks))
+	for i, c := range rankedChunks {
 		cits[i] = &entities.Citation{
-			ID:        chatNewID(),
-			MessageID: assistantMsg.ID,
-			ChunkID:   rc.ChunkID,
+			ID:             chatNewID(),
+			MessageID:      assistantMsg.ID,
+			ChunkID:        c.ID,
+			StartTimestamp: c.StartTimestamp,
+			PageNumber:     c.PageNumber,
 		}
 		citResults[i] = CitationResult{
-			ChunkID: rc.ChunkID,
+			ChunkID:        c.ID,
+			DocumentID:     c.DocumentID,
+			StartTimestamp: c.StartTimestamp,
+			Title:          c.Title,
 		}
 	}
-	if err := s.citations.CreateBatch(ctx, cits); err != nil {
-		log.Printf("chat: save citations: %v", err)
+	if len(cits) > 0 {
+		if err := s.citations.CreateBatch(ctx, cits); err != nil {
+			log.Printf("chat: save citations: %v", err)
+		}
 	}
 
 	return &MessageResult{

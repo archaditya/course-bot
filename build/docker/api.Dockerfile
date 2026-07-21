@@ -10,6 +10,7 @@ RUN go mod download
 # COPY source code AFTER dependencies are cached
 COPY internal/ ./internal/
 COPY apps/api/ ./apps/api/
+COPY migrations/ ./migrations/
 
 # Build statically linked production binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /bin/api ./apps/api/cmd/api
@@ -21,6 +22,10 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
 COPY --from=builder /bin/api /app/api
+# postgres.RunMigrations(db, "migrations") resolves this path relative to
+# WORKDIR at runtime — without this, the container crashes on boot looking
+# for a migrations/ folder that was never copied in.
+COPY --from=builder /app/migrations /app/migrations
 
 EXPOSE 8080
 ENTRYPOINT ["/app/api"]

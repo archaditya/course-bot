@@ -85,11 +85,17 @@ var requiredVars = []string{
 // ai-service's Go-side wiring); nothing below application/interfaces should
 // read the environment directly.
 func Load() (*Config, error) {
-	err := godotenv.Load()
-	if err != nil {
+	// A missing .env file is expected and fine in any environment where the
+	// platform injects env vars directly (Docker, systemd, VPS) rather than
+	// shipping a .env file — that's the normal case in production, per
+	// docs/09-deployment.md#configuration-strategy. Only a real read error
+	// (bad permissions, malformed file) should stop boot.
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("config: failed to load .env file: %w", err)
 	}
-	
+
+	normalizeEnvAliases()
+
 	var missing []string
 	for _, name := range requiredVars {
 		if os.Getenv(name) == "" {
@@ -144,6 +150,34 @@ func envOrDefault(name, def string) string {
 		return v
 	}
 	return def
+}
+
+// normalizeEnvAliases reconciles a couple of naming mismatches that have
+// shown up between this package's canonical var names and deployment
+// configs (e.g. docker-compose.prod.yml). It mutates the process
+// environment once, at boot, so every other line in this file — and the
+// requiredVars check above — can keep referring to a single canonical name.
+func normalizeEnvAliases() {
+	// DATABASE_URL -> POSTGRES_URL
+	if os.Getenv("POSTGRES_URL") == "" {
+		if v := os.Getenv("DATABASE_URL"); v != "" {
+			os.Setenv("POSTGRES_URL", v)
+		}
+	}
+
+	// R2_BUCKET_NAME -> R2_BUCKET
+	if os.Getenv("R2_BUCKET") == "" {
+		if v := os.Getenv("R2_BUCKET_NAME"); v != "" {
+			os.Setenv("R2_BUCKET", v)
+		}
+	}
+
+	// REDIS_URL without a scheme (e.g. "redis:6379") -> add redis:// so
+	// go-redis's ParseURL doesn't reject it.
+	if v := os.Getenv("REDIS_URL"); v != "" &&
+		!strings.HasPrefix(v, "redis://") && !strings.HasPrefix(v, "rediss://") {
+		os.Setenv("REDIS_URL", "redis://"+v)
+	}
 }
 
 func parseIntDefault(name string, def int) (int, error) {
