@@ -10,11 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
 
-	"course-assistant/internal/domain/provider"
+	"archadilm/internal/domain/provider"
 )
 
 // Client wraps the AI Service HTTP API.
@@ -26,10 +27,10 @@ type Client struct {
 // Compile-time interface assertions.
 var (
 	_ provider.LLMProvider       = (*Client)(nil)
-	_ provider.EmbeddingProvider   = (*Client)(nil)
-	_ provider.RerankerProvider    = (*Client)(nil)
-	_ provider.GuardrailProvider   = (*Client)(nil)
-	_ provider.EvaluatorProvider   = (*Client)(nil)
+	_ provider.EmbeddingProvider = (*Client)(nil)
+	_ provider.RerankerProvider  = (*Client)(nil)
+	_ provider.GuardrailProvider = (*Client)(nil)
+	_ provider.EvaluatorProvider = (*Client)(nil)
 )
 
 // NewClient creates a Client pointed at aiServiceURL (e.g. "http://localhost:8000").
@@ -308,6 +309,54 @@ func (c *Client) GenerateSummary(ctx context.Context, content, promptVersion str
 	return resp.Summary, nil
 }
 
+// ── 7. Advanced RAG Pipeline Methods ──────────────────────────────────────
+
+// QueryEnhancement holds the result of query understanding.
+type QueryEnhancement struct {
+	StepBack   string   `json:"step_back"`
+	Rewritten  string   `json:"rewritten"`
+	SubQueries []string `json:"sub_queries"`
+}
+
+type enhanceQueryRequest struct {
+	Query         string `json:"query"`
+	PromptVersion string `json:"prompt_version"`
+}
+
+// EnhanceQuery calls the AI Service to get step-back, rewritten, and
+// sub-query variants of the user's question.
+func (c *Client) EnhanceQuery(ctx context.Context, query string) (*QueryEnhancement, error) {
+	var resp QueryEnhancement
+	if err := c.postJSON(ctx, "/enhance-query", enhanceQueryRequest{
+		Query:         query,
+		PromptVersion: "1.0",
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("llm: enhance-query: %w", err)
+	}
+	return &resp, nil
+}
+
+type hydeDocumentRequest struct {
+	Query         string `json:"query"`
+	PromptVersion string `json:"prompt_version"`
+}
+
+type hydeDocumentResponse struct {
+	Document string `json:"document"`
+}
+
+// HydeDocument generates a hypothetical document for HyDE embedding.
+func (c *Client) HydeDocument(ctx context.Context, query string) (string, error) {
+	var resp hydeDocumentResponse
+	if err := c.postJSON(ctx, "/hyde-document", hydeDocumentRequest{
+		Query:         query,
+		PromptVersion: "1.0",
+	}, &resp); err != nil {
+		return "", fmt.Errorf("llm: hyde-document: %w", err)
+	}
+	return resp.Document, nil
+}
+
 // ── Internal Helpers ──────────────────────────────────────────────────────
 
 func (c *Client) postJSON(ctx context.Context, path string, body, out any) error {
@@ -334,4 +383,75 @@ func (c *Client) postJSON(ctx context.Context, path string, body, out any) error
 	}
 
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// ExtractPDF sends raw PDF bytes to the AI Service and returns extracted
+// pages. Uses multipart/form-data since the AI Service expects a file upload.
+func (c *Client) ExtractPDF(pdfData []byte) ([]PDFPage, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", "document.pdf")
+	if err != nil {
+		return nil, fmt.Errorf("llm: create form file: %w", err)
+	}
+	if _, err := part.Write(pdfData); err != nil {
+		return nil, fmt.Errorf("llm: write pdf data: %w", err)
+	}
+	writer.Close()
+
+	req, err := http.NewRequest(http.MethodPost, c.base+"/extract-pdf", &buf)
+	if err != nil {
+		return nil, fmt.Errorf("llm: extract-pdf request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("llm: extract-pdf do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("llm: extract-pdf status %d: %s", resp.StatusCode, string(raw))
+	}
+
+	var result struct {
+		Pages []PDFPage `json:"pages"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("llm: extract-pdf decode: %w", err)
+	}
+	return result.Pages, nil
+}
+
+// PDFPage represents one page of extracted PDF text.
+type PDFPage struct {
+	PageNumber int    `json:"page_number"`
+	Text       string `json:"text"`
+}
+
+// URLSection is one section of extracted web page content.
+type URLSection struct {
+	Text    string `json:"text"`
+	Heading string `json:"heading,omitempty"`
+}
+
+// URLExtraction is the result of web URL extraction.
+type URLExtraction struct {
+	Title    string       `json:"title"`
+	Sections []URLSection `json:"sections"`
+}
+
+type extractURLRequest struct {
+	URL string `json:"url"`
+}
+
+// ExtractURL fetches and extracts readable text from a web URL.
+func (c *Client) ExtractURL(url string) (*URLExtraction, error) {
+	var resp URLExtraction
+	if err := c.postJSON(context.Background(), "/extract-url", extractURLRequest{URL: url}, &resp); err != nil {
+		return nil, fmt.Errorf("llm: extract-url: %w", err)
+	}
+	return &resp, nil
 }

@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 
-	"course-assistant/internal/application/course"
-	"course-assistant/internal/domain/entities"
+	"archadilm/internal/application/course"
+	"archadilm/internal/domain/entities"
 )
 
 type CourseHandler struct {

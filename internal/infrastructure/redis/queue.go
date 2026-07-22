@@ -12,7 +12,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"course-assistant/internal/domain/provider"
+	"archadilm/internal/domain/provider"
 )
 
 // Queue wraps a Redis client and implements provider.Queue using Redis Streams

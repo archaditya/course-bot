@@ -8,8 +8,8 @@ import (
 	"context"
 	"fmt"
 
-	"course-assistant/internal/domain/entities"
-	"course-assistant/internal/domain/repository"
+	"archadilm/internal/domain/entities"
+	"archadilm/internal/domain/repository"
 )
 
 type Service struct {

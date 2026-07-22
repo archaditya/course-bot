@@ -16,15 +16,15 @@ import (
 )
 
 type Config struct {
-	AIServiceURL   string
-	Database       DatabaseConfig
-	Redis          RedisConfig
-	R2             R2Config
-	Qdrant         QdrantConfig
-	Auth           AuthConfig
-	Providers      ProvidersConfig
-	Flags          FeatureFlags
-	ServiceEnv     string // local | staging | prod
+	AIServiceURL string
+	Database     DatabaseConfig
+	Redis        RedisConfig
+	R2           R2Config
+	Qdrant       QdrantConfig
+	Auth         AuthConfig
+	Providers    ProvidersConfig
+	Flags        FeatureFlags
+	ServiceEnv   string // local | staging | prod
 }
 
 type DatabaseConfig struct {
@@ -40,6 +40,7 @@ type R2Config struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	Bucket          string
+	Endpoint        string
 }
 
 type QdrantConfig struct {
@@ -112,15 +113,16 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		ServiceEnv: envOrDefault("SERVICE_ENV", "local"),
+		ServiceEnv:   envOrDefault("SERVICE_ENV", "local"),
 		AIServiceURL: envOrDefault("AI_SERVICE_URL", "http://localhost:8000"),
-		Database:   DatabaseConfig{URL: os.Getenv("POSTGRES_URL")},
-		Redis:      RedisConfig{URL: os.Getenv("REDIS_URL")},
+		Database:     DatabaseConfig{URL: os.Getenv("POSTGRES_URL")},
+		Redis:        RedisConfig{URL: os.Getenv("REDIS_URL")},
 		R2: R2Config{
 			AccountID:       os.Getenv("R2_ACCOUNT_ID"),
 			AccessKeyID:     os.Getenv("R2_ACCESS_KEY_ID"),
 			SecretAccessKey: os.Getenv("R2_SECRET_ACCESS_KEY"),
 			Bucket:          os.Getenv("R2_BUCKET"),
+			Endpoint:        os.Getenv("R2_ENDPOINT"),
 		},
 		Qdrant: QdrantConfig{
 			URL:    os.Getenv("QDRANT_URL"),
@@ -169,6 +171,19 @@ func normalizeEnvAliases() {
 	if os.Getenv("R2_BUCKET") == "" {
 		if v := os.Getenv("R2_BUCKET_NAME"); v != "" {
 			os.Setenv("R2_BUCKET", v)
+		}
+	}
+
+	// R2_ENDPOINT -> R2_ACCOUNT_ID fallback if R2_ACCOUNT_ID is empty
+	if os.Getenv("R2_ACCOUNT_ID") == "" {
+		if ep := os.Getenv("R2_ENDPOINT"); ep != "" {
+			trimmed := strings.TrimPrefix(strings.TrimPrefix(ep, "https://"), "http://")
+			parts := strings.Split(trimmed, ".")
+			if len(parts) > 0 && parts[0] != "" {
+				os.Setenv("R2_ACCOUNT_ID", parts[0])
+			} else {
+				os.Setenv("R2_ACCOUNT_ID", ep)
+			}
 		}
 	}
 

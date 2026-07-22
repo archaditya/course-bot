@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator
 import json
@@ -12,6 +12,8 @@ from api.schemas import (
     GenerationRequest, GenerationResponse,
     EvaluationRequest, EvaluationResponse,
     GuardrailCheckRequest, GuardrailCheckResponse,
+    QueryEnhancementRequest, QueryEnhancementResponse,
+    HydeDocumentRequest, HydeDocumentResponse,
 )
 
 from app.providers import get_embedding_provider, get_llm_provider, get_reranker_provider, get_guardrail_provider
@@ -25,8 +27,13 @@ from app.reranker.service import RerankerService
 from app.generator.service import GeneratorService
 from app.evaluator.service import EvaluatorService
 from app.guardrails.service import GuardrailsService
+from app.query_enhancer.service import QueryEnhancerService
+from app.hyde.service import HydeService
+from app.pdf_extractor.service import PDFExtractorService
+from app.url_extractor.service import URLExtractorService
+from api.schemas import URLExtractionRequest, URLExtractionResponse, URLSection as URLSectionSchema
 
-app = FastAPI(title="AI Service", version="0.1.0")
+app = FastAPI(title="archadiLM AI Service", version="0.2.0")
 
 # Initialize services
 embedding_provider = get_embedding_provider()
@@ -41,6 +48,10 @@ reranker = RerankerService(reranker_provider)
 generator = GeneratorService(llm_provider)
 evaluator = EvaluatorService(llm_provider)
 guardrails = GuardrailsService(guardrail_provider)
+query_enhancer = QueryEnhancerService(llm_provider)
+hyde_service = HydeService(llm_provider)
+pdf_extractor = PDFExtractorService()
+url_extractor = URLExtractorService()
 
 qdrant = QdrantClient()
 bm25 = BM25Retriever()
@@ -49,7 +60,7 @@ retriever = RetrieverService(qdrant, bm25, embedding_provider)
 
 @app.get("/healthz")
 async def health_check():
-    return {"status": "ok", "service": "ai-service", "version": "0.1.0"}
+    return {"status": "ok", "service": "ai-service", "version": "0.2.0"}
 
 
 @app.post("/embeddings", response_model=EmbeddingResponse)
@@ -190,5 +201,63 @@ async def check_guardrails(request: GuardrailCheckRequest):
     try:
         passed, reason = await guardrails.check_query(request.text)
         return GuardrailCheckResponse(passed=passed, reason=reason)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── NEW: Advanced RAG Pipeline Endpoints ──────────────────────────────────
+
+
+@app.post("/enhance-query", response_model=QueryEnhancementResponse)
+async def enhance_query(request: QueryEnhancementRequest):
+    """Query understanding: step-back, rewrite, sub-query decomposition."""
+    try:
+        result = await query_enhancer.enhance(
+            query=request.query,
+            prompt_version=request.prompt_version,
+        )
+        return QueryEnhancementResponse(
+            step_back=result.step_back,
+            rewritten=result.rewritten,
+            sub_queries=result.sub_queries,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/hyde-document", response_model=HydeDocumentResponse)
+async def hyde_document(request: HydeDocumentRequest):
+    """Generate a hypothetical document for HyDE embedding."""
+    try:
+        document = await hyde_service.generate(
+            query=request.query,
+            prompt_version=request.prompt_version,
+        )
+        return HydeDocumentResponse(document=document)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/extract-pdf")
+async def extract_pdf(file: UploadFile = File(...)):
+    """Extract text from a PDF file page-by-page."""
+    try:
+        content = await file.read()
+        pages = await pdf_extractor.extract(content)
+        return {"pages": [p.dict() for p in pages]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/extract-url", response_model=URLExtractionResponse)
+async def extract_url(request: URLExtractionRequest):
+    """Extract readable text from a web URL."""
+    try:
+        result = await url_extractor.extract(request.url)
+        return URLExtractionResponse(
+            title=result.title,
+            sections=[
+                URLSectionSchema(text=s.text, heading=s.heading)
+                for s in result.sections
+            ],
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

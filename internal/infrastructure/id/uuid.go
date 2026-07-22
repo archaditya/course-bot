@@ -7,7 +7,7 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	"course-assistant/internal/domain/provider"
+	"archadilm/internal/domain/provider"
 )
 
 // UUIDGenerator generates RFC 4122 UUID v4 identifiers using crypto/rand.

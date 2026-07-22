@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -16,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"course-assistant/internal/domain/provider"
+	"archadilm/internal/domain/provider"
 )
 
 // Store wraps an S3 client pointed at Cloudflare R2.
@@ -27,10 +29,20 @@ type Store struct {
 }
 
 // NewStore creates a Store using the R2 S3-compatible endpoint.
-// accountID must be the Cloudflare account ID; credentials are the R2 API token
-// pair (not the Cloudflare global API key). See docs/08-security.md#secrets.
-func NewStore(accountID, accessKeyID, secretAccessKey, bucket string) (*Store, error) {
-	endpoint := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
+// accountIDOrEndpoint can be either the Cloudflare account ID or the full R2_ENDPOINT URL.
+// credentials are the R2 API token pair (not the Cloudflare global API key). See docs/08-security.md#secrets.
+func NewStore(accountIDOrEndpoint, accessKeyID, secretAccessKey, bucket string) (*Store, error) {
+	endpoint := accountIDOrEndpoint
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		endpoint = fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountIDOrEndpoint)
+	}
+
+	// Sanitize endpoint to preserve scheme and host only (strip any trailing bucket/path)
+	if u, err := url.Parse(endpoint); err == nil && u.Host != "" {
+		endpoint = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+	} else {
+		endpoint = strings.TrimRight(endpoint, "/")
+	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(

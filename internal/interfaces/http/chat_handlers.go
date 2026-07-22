@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"course-assistant/internal/application/chat"
+	"archadilm/internal/application/chat"
 )
 
 // ChatHandler handles conversation and message endpoints. Streaming responses

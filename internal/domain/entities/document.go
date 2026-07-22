@@ -2,19 +2,18 @@ package entities
 
 import "time"
 
-// SourceType enumerates supported raw content types. MVP is SRT only; the
-// rest are the roadmap in docs/04-indexing-pipeline.md#roadmap. Adding a new
-// type here plus one DocumentParser implementation (see
-// internal/domain/provider) is the entire cost of onboarding a new format.
+// SourceType enumerates supported raw content types.
 type SourceType string
 
 const (
 	SourceTypeSRT   SourceType = "srt"
+	SourceTypeVTT   SourceType = "vtt"
 	SourceTypeVideo SourceType = "video"
 	SourceTypePDF   SourceType = "pdf"
 	SourceTypeDOCX  SourceType = "docx"
 	SourceTypeGit   SourceType = "github"
 	SourceTypeURL   SourceType = "url"
+	SourceTypeText  SourceType = "text"
 )
 
 // Document is the raw uploaded artifact tied to a Lesson, plus a pointer to
@@ -23,9 +22,12 @@ const (
 type Document struct {
 	ID          string
 	LessonID    string
-	CourseID    string // denormalized for query convenience; Lesson->Course is authoritative
+	CourseID    string // denormalized for query convenience; Lesson→Course is authoritative
 	SourceType  SourceType
 	StoragePath string // pointer into R2 `raw/`, immutable — see docs/07-storage.md
+	// SourceURL is set for URL-based sources (video URL, web URL). Mutually
+	// exclusive with file-upload StoragePath — one or the other is populated.
+	SourceURL string
 	// NormalizedRef points at the processed NormalizedDocument in R2
 	// `processed/`, produced by the Parser Worker. Nil until PARSING succeeds.
 	NormalizedRef        *string
@@ -38,10 +40,7 @@ type Document struct {
 
 // NormalizedDocument is the shared intermediate shape every parser converges
 // on before anything downstream (chunking, embedding, retrieval) touches it.
-// See docs/04-indexing-pipeline.md#internal-document-format and
-// docs/decisions/ADR-004-normalized-document.md. This is an in-flight/transfer
-// shape (stored as processed/ bytes in R2, referenced by Document.NormalizedRef)
-// rather than a Postgres-backed entity of its own.
+// See docs/04-indexing-pipeline.md#internal-document-format.
 type NormalizedDocument struct {
 	Metadata struct {
 		SourceType       SourceType
@@ -50,7 +49,7 @@ type NormalizedDocument struct {
 	}
 	Language             string // detected or declared
 	SourceRef            string // pointer back to raw file in R2
-	Timeline             bool   // true for srt/video, false for pdf/docx
+	Timeline             bool   // true for srt/video/vtt, false for pdf/docx/url/text
 	NormalizationVersion string
 	Segments             []Segment
 }

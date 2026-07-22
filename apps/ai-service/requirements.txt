@@ -7,3 +7,6 @@ qdrant-client>=1.7.0
 rank-bm25>=0.2.2
 python-dotenv>=1.0.0
 httpx>=0.25.0
+pymupdf>=1.24.0
+beautifulsoup4>=4.12.0
+python-multipart>=0.0.9

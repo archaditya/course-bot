@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"course-assistant/internal/domain/entities"
+	"archadilm/internal/domain/entities"
 )
 
 type ProjectRepository struct{ db *sql.DB }

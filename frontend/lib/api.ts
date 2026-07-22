@@ -51,6 +51,7 @@ export interface Course {
   id: string;
   title: string;
   status: string;
+  created_at: string | number | Date;
 }
 
 export async function apiCreateCourse(projectId: string, title: string): Promise<Course> {
@@ -188,4 +189,70 @@ export function setTokens(tokens: { access_token: string; refresh_token: string 
 export function clearTokens(): void {
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
+}
+
+// ── Sources ───────────────────────────────────────────────────────────────
+
+export interface AddSourceResult {
+  course_id: string;
+  document_ids: string[];
+}
+
+/**
+ * Add a URL-based or text-based source to a course.
+ * For file uploads, use apiUpload() instead.
+ */
+export async function apiAddSource(
+  courseId: string,
+  sourceType: 'url' | 'text' | 'video_url',
+  opts: { url?: string; content?: string; title?: string },
+): Promise<AddSourceResult> {
+  return apiFetch(`/courses/${courseId}/sources`, {
+    method: 'POST',
+    body: { source_type: sourceType, ...opts },
+    auth: true,
+  });
+}
+
+// ── Course Status Polling ─────────────────────────────────────────────────
+
+export interface JobStatus {
+  id: string;
+  stage: string;
+  status: string;
+  attempts: number;
+  last_error?: string;
+}
+
+export interface CourseStatus {
+  course_id: string;
+  status: string;
+  jobs: JobStatus[];
+}
+
+/**
+ * Poll for course processing status. Returns the current course status
+ * and all associated jobs. Frontend should poll at 3-5s intervals.
+ */
+export async function apiGetCourseStatus(courseId: string): Promise<CourseStatus> {
+  return apiFetch(`/courses/${courseId}/status`, { auth: true });
+}
+
+// ── Chunk Detail (for source panel) ───────────────────────────────────────
+
+export interface ChunkDetail {
+  id: string;
+  document_id: string;
+  content: string;
+  title?: string;
+  start_timestamp?: number;
+  end_timestamp?: number;
+  page_number?: number;
+}
+
+/**
+ * Fetch full chunk details for the source detail panel.
+ */
+export async function apiGetChunk(chunkId: string): Promise<ChunkDetail> {
+  return apiFetch(`/chunks/${chunkId}`, { auth: true });
 }

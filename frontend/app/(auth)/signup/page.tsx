@@ -4,11 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { apiSignup, apiLogin, setTokens, ApiError } from '@/lib/api';
+import { apiSignup, apiLogin, ApiError } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { Button, Input } from '@/design-system';
 
 export default function SignupPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -19,7 +21,7 @@ export default function SignupPage() {
       return tokens;
     },
     onSuccess: (tokens) => {
-      setTokens(tokens);
+      login(tokens);
       router.push('/');
     },
   });

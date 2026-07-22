@@ -1,6 +1,6 @@
 package provider
 
-import "course-assistant/internal/domain/entities"
+import "archadilm/internal/domain/entities"
 
 // FileMeta describes the raw uploaded file being parsed.
 type FileMeta struct {

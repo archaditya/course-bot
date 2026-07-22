@@ -1,10 +1,12 @@
 package http
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
-	"course-assistant/internal/application/upload"
+	"archadilm/internal/application/upload"
 )
 
 // UploadHandler handles POST /courses/:id/upload per
@@ -20,12 +22,18 @@ func NewUploadHandler(svc *upload.Service) *UploadHandler {
 
 func (h *UploadHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /courses/{id}/upload", h.upload)
+	mux.HandleFunc("POST /courses/{courseID}/sources", h.handleAddSource)
 }
 
 func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
 		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+
+	if h.svc == nil {
+		WriteError(w, http.StatusServiceUnavailable, "UPLOAD_DISABLED", "Upload service unavailable.")
 		return
 	}
 
@@ -54,6 +62,23 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 		traceID = r.PathValue("id") + "-" + header.Filename
 	}
 
+	// Auto-detect ZIP uploads and route to the ZIP handler
+	if strings.HasSuffix(strings.ToLower(header.Filename), ".zip") {
+		result, err := h.svc.UploadZip(r.Context(),
+			claims.WorkspaceID,
+			r.FormValue("project_id"),
+			r.PathValue("id"),
+			data,
+			traceID,
+		)
+		if err != nil {
+			notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
+			return
+		}
+		writeJSON(w, http.StatusAccepted, result)
+		return
+	}
+
 	result, err := h.svc.Upload(r.Context(),
 		claims.WorkspaceID,
 		r.FormValue("project_id"),
@@ -63,18 +88,71 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 		traceID,
 	)
 	if err != nil {
-		switch err.Error() {
-		case "upload: unsupported file type":
+		if strings.Contains(err.Error(), "unsupported file type") {
 			WriteError(w, http.StatusBadRequest, "UNSUPPORTED_FILE_TYPE",
-				"Only .srt files are supported in this version.")
-		default:
+				"Supported: .srt, .vtt, .pdf, .docx, .txt, .md, .zip")
+		} else {
 			notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"course_id":    result.CourseID,
-		"document_ids": result.DocumentIDs,
-	})
+	writeJSON(w, http.StatusAccepted, result)
+}
+
+// handleAddSource handles URL-based and text-based source additions.
+// For file uploads, the existing upload endpoint is used instead.
+func (h *UploadHandler) handleAddSource(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+
+	if h.svc == nil {
+		WriteError(w, http.StatusServiceUnavailable, "UPLOAD_DISABLED", "Upload service unavailable.")
+		return
+	}
+
+	courseID := r.PathValue("courseID")
+
+	var req struct {
+		SourceType string `json:"source_type"` // "url" | "text" | "video_url"
+		URL        string `json:"url,omitempty"`
+		Content    string `json:"content,omitempty"`
+		Title      string `json:"title,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "Invalid JSON body.")
+		return
+	}
+
+	switch req.SourceType {
+	case "url":
+		if req.URL == "" {
+			WriteError(w, http.StatusBadRequest, "MISSING_URL", "url field is required for URL sources.")
+			return
+		}
+	case "text":
+		if req.Content == "" {
+			WriteError(w, http.StatusBadRequest, "MISSING_CONTENT", "content field is required for text sources.")
+			return
+		}
+	case "video_url":
+		if req.URL == "" {
+			WriteError(w, http.StatusBadRequest, "MISSING_URL", "url field is required for video URL sources.")
+			return
+		}
+	default:
+		WriteError(w, http.StatusBadRequest, "INVALID_SOURCE_TYPE", "source_type must be url, text, or video_url.")
+		return
+	}
+
+	result, err := h.svc.AddSource(r.Context(), claims.WorkspaceID, courseID, req.SourceType, req.URL, req.Content, req.Title)
+	if err != nil {
+		notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, result)
 }

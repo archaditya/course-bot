@@ -6,8 +6,8 @@ import (
 	"log"
 	"net/http"
 
-	"course-assistant/internal/application/auth"
-	"course-assistant/internal/domain/repository"
+	"archadilm/internal/application/auth"
+	"archadilm/internal/domain/repository"
 )
 
 type AuthHandler struct {

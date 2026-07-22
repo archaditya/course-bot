@@ -87,3 +87,51 @@ class GuardrailCheckRequest(BaseModel):
 class GuardrailCheckResponse(BaseModel):
     passed: bool
     reason: str
+
+# ── Query Enhancement ─────────────────────────────────────────────────────
+
+class QueryEnhancementRequest(BaseModel):
+    query: str
+    prompt_version: Optional[str] = "1.0"
+
+
+class QueryEnhancementResponse(BaseModel):
+    step_back: str
+    rewritten: str
+    sub_queries: List[str]
+
+
+# ── HyDE ──────────────────────────────────────────────────────────────────
+
+class HydeDocumentRequest(BaseModel):
+    query: str
+    prompt_version: Optional[str] = "1.0"
+
+
+class HydeDocumentResponse(BaseModel):
+    document: str
+
+# ── PDF Extraction ────────────────────────────────────────────────────────
+
+class PDFPage(BaseModel):
+    page_number: int
+    text: str
+
+
+class PDFExtractionResponse(BaseModel):
+    pages: List[PDFPage]
+
+# ── URL Extraction ────────────────────────────────────────────────────────
+
+class URLExtractionRequest(BaseModel):
+    url: str
+
+
+class URLSection(BaseModel):
+    text: str
+    heading: Optional[str] = None
+
+
+class URLExtractionResponse(BaseModel):
+    title: str
+    sections: List[URLSection]

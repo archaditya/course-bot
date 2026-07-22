@@ -10,9 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"course-assistant/internal/domain/entities"
-	"course-assistant/internal/domain/provider"
-	"course-assistant/internal/domain/repository"
+	"archadilm/internal/domain/entities"
+	"archadilm/internal/domain/provider"
+	"archadilm/internal/domain/repository"
+	"archadilm/internal/infrastructure/llm"
 )
 
 // NormalizationVersion tracks the SRT parser logic version.
@@ -24,6 +25,7 @@ type ParserWorker struct {
 	base
 	documents repository.DocumentRepository
 	objects   provider.ObjectStore
+	aiClient  *llm.Client
 }
 
 func NewParserWorker(
@@ -33,11 +35,13 @@ func NewParserWorker(
 	objects provider.ObjectStore,
 	queue provider.Queue,
 	ids provider.IDGenerator,
+	aiClient *llm.Client,
 ) *ParserWorker {
 	return &ParserWorker{
 		base:      base{courses: courses, jobs: jobs, queue: queue, ids: ids},
 		documents: documents,
 		objects:   objects,
+		aiClient:  aiClient,
 	}
 }
 
@@ -103,20 +107,57 @@ func (w *ParserWorker) process(ctx context.Context, courseID, docID, traceID str
 		return fmt.Errorf("parser: get document: %w", err)
 	}
 
-	rawData, err := w.objects.Get(ctx, doc.StoragePath)
-	if err != nil {
-		return fmt.Errorf("parser: get raw file: %w", err)
-	}
-
 	var normalized *entities.NormalizedDocument
+
 	switch doc.SourceType {
 	case entities.SourceTypeSRT:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return fmt.Errorf("parser: get raw file: %w", err)
+		}
 		normalized, err = parseSRT(rawData, doc)
+		if err != nil {
+			return fmt.Errorf("parser: srt: %w", err)
+		}
+
+	case entities.SourceTypeVTT:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return fmt.Errorf("parser: get raw file: %w", err)
+		}
+		normalized, err = parseVTT(rawData, doc)
+		if err != nil {
+			return fmt.Errorf("parser: vtt: %w", err)
+		}
+
+	case entities.SourceTypePDF:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return fmt.Errorf("parser: get raw file: %w", err)
+		}
+		normalized, err = parsePDF(rawData, doc, w.aiClient)
+		if err != nil {
+			return fmt.Errorf("parser: pdf: %w", err)
+		}
+
+	case entities.SourceTypeURL:
+		normalized, err = parseURL(doc, w.aiClient)
+		if err != nil {
+			return fmt.Errorf("parser: url: %w", err)
+		}
+
+	case entities.SourceTypeText:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return fmt.Errorf("parser: get raw file: %w", err)
+		}
+		normalized, err = parseText(rawData, doc)
+		if err != nil {
+			return fmt.Errorf("parser: text: %w", err)
+		}
+
 	default:
-		return fmt.Errorf("parser: unsupported type %s (only srt in MVP)", doc.SourceType)
-	}
-	if err != nil {
-		return fmt.Errorf("parser: parse: %w", err)
+		return fmt.Errorf("parser: unsupported source type %q", doc.SourceType)
 	}
 
 	data, err := json.Marshal(normalized)

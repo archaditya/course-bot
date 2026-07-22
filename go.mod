@@ -1,4 +1,4 @@
-module course-assistant
+module archadilm
 
 go 1.24
 

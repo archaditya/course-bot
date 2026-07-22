@@ -1,6 +1,6 @@
 package postgres
 
-import "course-assistant/internal/domain/repository"
+import "archadilm/internal/domain/repository"
 
 // Compile-time assertions that each repository actually implements the
 // domain interface application/ will depend on. If one of these breaks, the

@@ -12,14 +12,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"course-assistant/internal/application/worker"
-	"course-assistant/internal/config"
-	"course-assistant/internal/infrastructure/id"
-	"course-assistant/internal/infrastructure/llm"
-	pginfra "course-assistant/internal/infrastructure/postgres"
-	qdrantinfra "course-assistant/internal/infrastructure/qdrant"
-	r2infra "course-assistant/internal/infrastructure/r2"
-	redisinfra "course-assistant/internal/infrastructure/redis"
+	"archadilm/internal/application/worker"
+	"archadilm/internal/config"
+	"archadilm/internal/infrastructure/id"
+	"archadilm/internal/infrastructure/llm"
+	pginfra "archadilm/internal/infrastructure/postgres"
+	qdrantinfra "archadilm/internal/infrastructure/qdrant"
+	r2infra "archadilm/internal/infrastructure/r2"
+	redisinfra "archadilm/internal/infrastructure/redis"
 )
 
 func main() {
@@ -47,13 +47,17 @@ func main() {
 	}
 
 	var objects *r2infra.Store
-	if cfg.R2.AccountID != "" {
-		objects, err = r2infra.NewStore(cfg.R2.AccountID, cfg.R2.AccessKeyID, cfg.R2.SecretAccessKey, cfg.R2.Bucket)
+	r2Target := cfg.R2.AccountID
+	if r2Target == "" {
+		r2Target = cfg.R2.Endpoint
+	}
+	if r2Target != "" {
+		objects, err = r2infra.NewStore(r2Target, cfg.R2.AccessKeyID, cfg.R2.SecretAccessKey, cfg.R2.Bucket)
 		if err != nil {
 			log.Fatalf("worker: r2: %v", err)
 		}
 	} else {
-		log.Println("worker: R2 not configured — uploads will fail (set R2_ACCOUNT_ID etc.)")
+		log.Println("worker: R2 not configured — uploads will fail (set R2_ACCOUNT_ID or R2_ENDPOINT)")
 	}
 
 	// ── AI Service client ──────────────────────────────────────────────────
@@ -73,7 +77,7 @@ func main() {
 
 	// ── Wire workers ──────────────────────────────────────────────────────
 	manifestWorker := worker.NewManifestWorker(courses, jobs, documents, queue, ids)
-	parserWorker := worker.NewParserWorker(courses, jobs, documents, objects, queue, ids)
+	parserWorker := worker.NewParserWorker(courses, jobs, documents, objects, queue, ids, aiClient)
 	chunkWorker := worker.NewChunkWorker(courses, jobs, documents, objects, queue, ids)
 	metadataWorker := worker.NewMetadataWorker(courses, jobs, queue, ids, aiClient)
 	embeddingWorker := worker.NewEmbeddingWorker(courses, jobs, chunks, vectors, queue, aiClient)

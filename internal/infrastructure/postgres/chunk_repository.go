@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"course-assistant/internal/domain/entities"
-	"course-assistant/internal/domain/repository"
+	"archadilm/internal/domain/entities"
+	"archadilm/internal/domain/repository"
 )
 
 type chunkRepository struct{ db *sql.DB }

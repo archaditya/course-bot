@@ -1,5 +1,15 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from typing import Literal
+
+# Load root .env file (B:\Personal-Projects\GenAI\Course-Bot\.env)
+root_dir = Path(__file__).resolve().parent.parent.parent
+root_env = root_dir / ".env"
+if root_env.exists():
+    load_dotenv(dotenv_path=root_env, override=True)
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -8,14 +18,14 @@ class Settings(BaseSettings):
     api_port: int = 8000
     
     # OpenAI
-    openai_api_key: str = "your_openai_api_key_here"
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_embedding_model: str = "text-embedding-3-small"
     openai_llm_large_model: str = "gpt-4o"
     openai_llm_mini_model: str = "gpt-4o-mini"
     
     # Qdrant
-    qdrant_url: str = "http://localhost:6333"
-    qdrant_api_key: str | None = None
+    qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
+    qdrant_api_key: str | None = os.getenv("QDRANT_API_KEY", None)
     
     # Feature Flags
     guardrails_enabled: bool = True
@@ -28,10 +38,9 @@ class Settings(BaseSettings):
     embedding_provider: Literal["openai"] = "openai"
     reranker_provider: Literal["openai"] = "openai"
     guardrail_provider: Literal["openai"] = "openai"
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
 
 settings = Settings()
+
+if not settings.openai_api_key:
+    print("⚠️ WARNING: OPENAI_API_KEY is not set in root .env!")

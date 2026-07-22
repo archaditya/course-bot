@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"course-assistant/internal/domain/provider"
+	"archadilm/internal/domain/provider"
 )
 
 const collectionName = "course_chunks"

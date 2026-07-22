@@ -7,7 +7,9 @@ package http
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"time"
 )
 
 const apiVersion = "0.1.0"
@@ -43,12 +45,13 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 // Constructed once in cmd/api/main.go and passed in here so router.go stays
 // the single place that knows how the HTTP surface maps to handlers.
 type Dependencies struct {
-	JWTSigningKey   string
-	AuthHandler     *AuthHandler
-	ProjectHandler  *ProjectHandler
-	CourseHandler   *CourseHandler
-	UploadHandler   *UploadHandler
-	ChatHandler     *ChatHandler
+	JWTSigningKey  string
+	AuthHandler    *AuthHandler
+	ProjectHandler *ProjectHandler
+	CourseHandler  *CourseHandler
+	UploadHandler  *UploadHandler
+	ChatHandler    *ChatHandler
+	StatusHandler  *StatusHandler
 }
 
 // NewRouter wires up the Go API's HTTP surface — see
@@ -65,6 +68,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	deps.CourseHandler.Register(protected)
 	deps.UploadHandler.Register(protected)
 	deps.ChatHandler.Register(protected)
+	deps.StatusHandler.Register(protected)
 
 	top := http.NewServeMux()
 	top.Handle("/", public)
@@ -77,7 +81,25 @@ func NewRouter(deps Dependencies) http.Handler {
 	top.Handle("/conversations", auth(protected))
 	top.Handle("/conversations/", auth(protected))
 
-	return top
+	// Recovery wraps the entire handler tree — a panic anywhere returns 500
+	// instead of crashing the process.
+	return Recovery(CORS(Logging(top)))
+}
+
+// CORS middleware for frontend development.
+func CORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Workspace-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -87,4 +109,15 @@ func handleHealthz(w http.ResponseWriter, r *http.Request) {
 		Service: "api",
 		Version: apiVersion,
 	})
+}
+
+func Logging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		log.Printf("api: %s %s", r.Method, r.URL.Path)
+		
+		next.ServeHTTP(w, r)
+        
+        log.Printf("api: %s %s completed in %v", r.Method, r.URL.Path, time.Since(start))
+    })
 }

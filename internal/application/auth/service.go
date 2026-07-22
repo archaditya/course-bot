@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"time"
 
-	"course-assistant/internal/domain/entities"
-	"course-assistant/internal/domain/repository"
-	"course-assistant/internal/infrastructure/security"
+	"archadilm/internal/domain/entities"
+	"archadilm/internal/domain/repository"
+	"archadilm/internal/infrastructure/security"
 )
 
 var (

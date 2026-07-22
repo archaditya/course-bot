@@ -15,7 +15,7 @@ import (
 	"context"
 	"errors"
 
-	"course-assistant/internal/domain/entities"
+	"archadilm/internal/domain/entities"
 )
 
 // ErrNotFound is the sentinel every repository implementation returns when a

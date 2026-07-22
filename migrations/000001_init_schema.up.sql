@@ -86,17 +86,16 @@ CREATE TABLE documents (
     id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     lesson_id             uuid NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
     course_id             uuid NOT NULL REFERENCES courses(id) ON DELETE CASCADE, -- denormalized, see entities.Document
-    source_type           text NOT NULL CHECK (source_type IN ('srt', 'video', 'pdf', 'docx', 'github', 'url')),
-    storage_path          text NOT NULL,   -- R2 raw/ pointer, immutable
-    normalized_ref        text,             -- R2 processed/ pointer, set after PARSING
-    normalization_version text,
+    source_type           text NOT NULL CHECK (source_type IN ('srt', 'vtt', 'video', 'pdf', 'docx', 'github', 'url', 'text')),
+    storage_path          text NOT NULL DEFAULT '',   -- R2 raw/ pointer, immutable
+    source_url            text,            -- optional, populated when source_type == 'url' || 'video'
     original_filename     text NOT NULL,
-    checksum              text NOT NULL,
-    created_at            timestamptz NOT NULL DEFAULT now(),
-    updated_at            timestamptz NOT NULL DEFAULT now()
+    checksum              text NOT NULL,   -- sha256 hex string
+    created_at            timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_documents_lesson_id ON documents(lesson_id);
 CREATE INDEX idx_documents_course_id ON documents(course_id);
+CREATE INDEX idx_documents_checksum ON documents(checksum);
 
 CREATE TABLE chunks (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),

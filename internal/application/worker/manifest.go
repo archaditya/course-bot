@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log"
 
-	"course-assistant/internal/domain/entities"
-	"course-assistant/internal/domain/provider"
-	"course-assistant/internal/domain/repository"
+	"archadilm/internal/domain/entities"
+	"archadilm/internal/domain/provider"
+	"archadilm/internal/domain/repository"
 )
 
 // ManifestWorker consumes UPLOAD_COMPLETED, creates a parsing job per

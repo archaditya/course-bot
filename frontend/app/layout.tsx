@@ -4,16 +4,16 @@ import { Providers } from './providers';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Course Assistant — Chat with your course material',
-    template: '%s | Course Assistant',
+    default: 'archadiLM — Chat with your learning material',
+    template: '%s | archadiLM',
   },
   description:
-    'Upload course transcripts, slides, or videos and have a natural conversation with your study material. Get cited, grounded answers with timestamp links.',
-  keywords: ['AI', 'learning', 'course', 'study', 'RAG', 'chat'],
+    'Upload PDFs, videos, web pages, or text and have a natural conversation with your study material. Get cited, grounded answers with source links.',
+  keywords: ['AI', 'learning', 'RAG', 'study', 'chat', 'PDF', 'video', 'NotebookLM'],
   openGraph: {
     type: 'website',
-    title: 'Course Assistant',
-    description: 'Chat with your course material — grounded answers with citations.',
+    title: 'archadiLM',
+    description: 'Chat with your learning material — grounded answers with citations.',
   },
 };
 

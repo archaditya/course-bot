@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log"
 
-	"course-assistant/internal/domain/entities"
-	"course-assistant/internal/domain/provider"
-	"course-assistant/internal/domain/repository"
-	"course-assistant/internal/infrastructure/llm"
+	"archadilm/internal/domain/entities"
+	"archadilm/internal/domain/provider"
+	"archadilm/internal/domain/repository"
+	"archadilm/internal/infrastructure/llm"
 )
 
 // MetadataWorker consumes CHUNKED, calls the AI Service for title+summary

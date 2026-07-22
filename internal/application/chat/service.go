@@ -1,22 +1,23 @@
-// Package chat implements the query pipeline use case:
-// pre-guardrails → retrieve → rerank → generate (streaming) → evaluate
-// → post-guardrails → persist Message + Citations.
+// Package chat implements the advanced RAG query pipeline:
+// pre-guardrails → query enhancement (step-back, rewrite, sub-queries) →
+// HyDE document → multi-vector search → reciprocal rank fusion →
+// rerank → generate (streaming) → evaluate → persist.
 //
-// See docs/05-query-pipeline.md for the full pipeline with retry loop.
+// See docs/05-query-pipeline.md for the pipeline design.
 package chat
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
-	"course-assistant/internal/domain/entities"
-	"course-assistant/internal/domain/provider"
-	"course-assistant/internal/domain/repository"
-	"course-assistant/internal/infrastructure/llm"
+	"archadilm/internal/domain/entities"
+	"archadilm/internal/domain/provider"
+	"archadilm/internal/domain/repository"
+	"archadilm/internal/infrastructure/llm"
 )
 
 // Service owns the chat (query pipeline) use case.
@@ -33,7 +34,7 @@ type Service struct {
 	vectors       provider.VectorStore
 	embedder      provider.EmbeddingProvider
 	maxRetries    int
-	ids 		  provider.IDGenerator
+	ids           provider.IDGenerator
 }
 
 // NewService wires the chat service.
@@ -63,7 +64,7 @@ func NewService(
 		vectors:       vectors,
 		embedder:      embedder,
 		maxRetries:    maxRetries,
-		ids:		   ids,
+		ids:           ids,
 	}
 }
 
@@ -86,15 +87,15 @@ type CitationResult struct {
 
 // StreamToken is one token emitted during streaming.
 type StreamToken struct {
-	Text    string
-	Done    bool
-	Error   string
+	Text  string
+	Done  bool
+	Error string
 }
 
 // CreateConversation creates a new Conversation in the given project.
 func (s *Service) CreateConversation(ctx context.Context, ws repository.WorkspaceID, projectID string) (*entities.Conversation, error) {
 	conv := &entities.Conversation{
-		ID:        chatNewID(),
+		ID:        s.ids.New(),
 		ProjectID: projectID,
 		Title:     "New Chat",
 	}
@@ -104,13 +105,18 @@ func (s *Service) CreateConversation(ctx context.Context, ws repository.Workspac
 	return conv, nil
 }
 
-// Send runs the full query pipeline for one user message. It persists the
-// user message, streams tokens via the tokenCh channel, then persists the
-// assistant message + citations. The caller reads from tokenCh and forwards
-// tokens over SSE/WebSocket.
+// Send runs the full advanced RAG pipeline for one user message:
 //
-// The function blocks until the pipeline completes (after the last token is
-// sent). Callers should run it in a goroutine if they need to stay responsive.
+//  1. Pre-guardrails (PII + injection check)
+//  2. Query Enhancement (step-back, rewrite, sub-query decomposition)
+//  3. HyDE Document Generation
+//  4. Multi-vector embedding (original + step-back + HyDE + 3 sub-queries)
+//  5. Parallel vector search (6 searches)
+//  6. Reciprocal Rank Fusion → top-20
+//  7. Fetch chunk content from Postgres
+//  8. Rerank → top-5
+//  9. Generate with retry loop
+//  10. Persist message + citations
 func (s *Service) Send(
 	ctx context.Context,
 	ws repository.WorkspaceID,
@@ -126,10 +132,7 @@ func (s *Service) Send(
 	}
 	_ = conv
 
-	// Verify the course being queried also belongs to this workspace — the
-	// conversation check above does NOT cover this: course_id arrives as a
-	// caller-supplied field on every request, so without this check a user
-	// could query vectors from a course outside their workspace.
+	// Verify the course being queried also belongs to this workspace.
 	// See docs/08-security.md#workspace-isolation.
 	if _, err := s.courses.GetByID(ctx, ws, courseID); err != nil {
 		return nil, fmt.Errorf("chat: course access denied: %w", err)
@@ -137,7 +140,7 @@ func (s *Service) Send(
 
 	// Persist user message
 	userMsg := &entities.Message{
-		ID:             chatNewID(),
+		ID:             s.ids.New(),
 		ConversationID: conversationID,
 		Role:           entities.MessageRoleUser,
 		Content:        userContent,
@@ -147,7 +150,7 @@ func (s *Service) Send(
 		return nil, fmt.Errorf("chat: save user message: %w", err)
 	}
 
-	// ── Pre-guardrails (PII + injection) ──────────────────────────────────
+	// ── Step 1: Pre-guardrails (PII + injection) ──────────────────────────
 	injResult, err := s.guardrails.CheckInjection(ctx, userContent)
 	if err != nil {
 		log.Printf("chat: injection check: %v", err)
@@ -162,35 +165,84 @@ func (s *Service) Send(
 		return nil, fmt.Errorf("chat: query rejected: PII detected in input")
 	}
 
-	// ── Embed query ────────────────────────────────────────────────────────
-	vecs, err := s.embedder.Embed(ctx, []string{userContent})
+	// ── Step 2: Query Enhancement ─────────────────────────────────────────
+	// Call AI Service for step-back prompting, query rewriting, and
+	// sub-query decomposition. If it fails, fall back to the original query.
+	queryVariants := []string{userContent}
+	enhancement, err := s.aiClient.EnhanceQuery(ctx, userContent)
 	if err != nil {
-		return nil, fmt.Errorf("chat: embed query: %w", err)
+		log.Printf("chat: query enhancement failed (using original): %v", err)
+	} else {
+		queryVariants = append(queryVariants, enhancement.StepBack, enhancement.Rewritten)
+		queryVariants = append(queryVariants, enhancement.SubQueries...)
 	}
 
-	// ── Vector search (Qdrant) ─────────────────────────────────────────────
-	searchResults, err := s.vectors.Search(ctx, courseID, vecs[0], 20)
+	// ── Step 3: HyDE Document Generation ──────────────────────────────────
+	hydeDoc, err := s.aiClient.HydeDocument(ctx, userContent)
 	if err != nil {
-		return nil, fmt.Errorf("chat: vector search: %w", err)
+		log.Printf("chat: hyde generation failed (skipping): %v", err)
+	} else if hydeDoc != "" {
+		queryVariants = append(queryVariants, hydeDoc)
 	}
 
-	if len(searchResults) == 0 {
+	// ── Step 4: Multi-vector embedding ────────────────────────────────────
+	// Embed all query variants in a single batch call for efficiency.
+	allVecs, err := s.embedder.Embed(ctx, queryVariants)
+	if err != nil {
+		return nil, fmt.Errorf("chat: embed query variants: %w", err)
+	}
+
+	// ── Step 5: Parallel vector search ────────────────────────────────────
+	// Run one search per query variant in parallel.
+	type searchResult struct {
+		results []provider.VectorSearchResult
+		err     error
+	}
+	searchCh := make(chan searchResult, len(allVecs))
+	var wg sync.WaitGroup
+
+	for _, vec := range allVecs {
+		wg.Add(1)
+		go func(v provider.Vector) {
+			defer wg.Done()
+			results, err := s.vectors.Search(ctx, courseID, v, 20)
+			searchCh <- searchResult{results: results, err: err}
+		}(vec)
+	}
+
+	go func() {
+		wg.Wait()
+		close(searchCh)
+	}()
+
+	var allResultSets [][]provider.VectorSearchResult
+	for sr := range searchCh {
+		if sr.err != nil {
+			log.Printf("chat: one vector search failed: %v", sr.err)
+			continue
+		}
+		if len(sr.results) > 0 {
+			allResultSets = append(allResultSets, sr.results)
+		}
+	}
+
+	// ── Step 6: Reciprocal Rank Fusion ────────────────────────────────────
+	// Merge all result sets and take top-20 for the reranking stage.
+	mergedResults := reciprocalRankFusion(allResultSets, 20)
+
+	if len(mergedResults) == 0 {
 		noContent := "I couldn't find anything relevant to that question in this course material."
 		tokenCh <- StreamToken{Text: noContent, Done: true}
 		return &MessageResult{
-			MessageID:  chatNewID(),
+			MessageID:  s.ids.New(),
 			Content:    noContent,
 			Confidence: "normal",
 		}, nil
 	}
 
-	// ── Fetch real chunk content from Postgres ─────────────────────────────
-	// Qdrant only ever stores chunk_id + minimal filter payload (docs/07-storage.md);
-	// the actual content, title, and timestamps live in Postgres. Without this
-	// fetch, both reranking and generation have no real course material to work
-	// with — this is the join step the pipeline depends on.
-	chunkIDs := make([]string, len(searchResults))
-	for i, r := range searchResults {
+	// ── Step 7: Fetch real chunk content from Postgres ─────────────────────
+	chunkIDs := make([]string, len(mergedResults))
+	for i, r := range mergedResults {
 		chunkIDs[i] = r.ChunkID
 	}
 	fetchedChunks, err := s.chunks.GetByIDs(ctx, chunkIDs)
@@ -202,33 +254,30 @@ func (s *Service) Send(
 		chunkByID[c.ID] = c
 	}
 
-	// ── Rerank ────────────────────────────────────────────────────────────
-	candidates := make([]provider.RerankCandidate, 0, len(searchResults))
-	for _, r := range searchResults {
+	// ── Step 8: Rerank → top-5 ────────────────────────────────────────────
+	candidates := make([]provider.RerankCandidate, 0, len(mergedResults))
+	for _, r := range mergedResults {
 		if c, ok := chunkByID[r.ChunkID]; ok {
 			candidates = append(candidates, provider.RerankCandidate{ChunkID: c.ID, Content: c.Content})
 		}
 	}
 	ranked, err := s.aiClient.Rerank(ctx, userContent, candidates)
 	if err != nil {
-		log.Printf("chat: rerank: %v (continuing with unranked)", err)
-		// non-fatal; use original vector-search order
-		ranked = make([]provider.RankedChunk, len(searchResults))
-		for i, r := range searchResults {
+		log.Printf("chat: rerank: %v (continuing with RRF order)", err)
+		// non-fatal; use RRF order
+		ranked = make([]provider.RankedChunk, len(mergedResults))
+		for i, r := range mergedResults {
 			ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
 		}
 	}
 
-	// Take top-5 after reranking
 	topK := 5
 	if len(ranked) < topK {
 		topK = len(ranked)
 	}
 	ranked = ranked[:topK]
 
-	// Resolve the final ranked chunk_ids back to their full Chunk rows, in
-	// ranked order — this order drives both the generation context and the
-	// citations returned to the client.
+	// Resolve ranked chunk_ids back to full Chunk rows
 	rankedChunks := make([]*entities.Chunk, 0, len(ranked))
 	for _, rc := range ranked {
 		if c, ok := chunkByID[rc.ChunkID]; ok {
@@ -246,14 +295,12 @@ func (s *Service) Send(
 		context_ = "No relevant course material was found for this question."
 	}
 
-	// ── Generate with bounded retry loop ──────────────────────────────────
-	// docs/05-query-pipeline.md: retry up to maxRetries if evaluator score < threshold
+	// ── Step 9: Generate with bounded retry loop ──────────────────────────
 	var bestContent string
 	var bestScore int
 	confidence := "normal"
 
 	for attempt := 1; attempt <= s.maxRetries; attempt++ {
-		// Create streaming prompt
 		prompt := provider.Prompt{
 			System: "You are a helpful study assistant. Answer questions based ONLY on the provided course material. Cite your sources.",
 			Messages: []provider.PromptMessage{
@@ -270,9 +317,6 @@ func (s *Service) Send(
 
 		var fullContent string
 		for token := range tokenStream {
-			// if token.Error != "" {
-			// 	break
-			// }
 			fullContent += token.Text
 			if !token.Done {
 				tokenCh <- StreamToken{Text: token.Text}
@@ -306,13 +350,13 @@ func (s *Service) Send(
 
 	tokenCh <- StreamToken{Done: true}
 
-	// ── Persist assistant message ──────────────────────────────────────────
+	// ── Step 10: Persist assistant message + citations ─────────────────────
 	msgStatus := entities.MessageStatusCompleted
 	if confidence == "low_confidence" {
 		msgStatus = entities.MessageStatusLowConfidence
 	}
 	assistantMsg := &entities.Message{
-		ID:             chatNewID(),
+		ID:             s.ids.New(),
 		ConversationID: conversationID,
 		Role:           entities.MessageRoleAssistant,
 		Content:        bestContent,
@@ -322,16 +366,11 @@ func (s *Service) Send(
 		log.Printf("chat: save assistant message: %v", err)
 	}
 
-	// ── Persist citations ──────────────────────────────────────────────────
-	// Built from rankedChunks (real Chunk rows), not bare chunk IDs, so both
-	// the DB row and the client-facing result carry the real timestamp/page
-	// and document/title info — this is what powers the clickable
-	// timestamp-citation UI element.
 	cits := make([]*entities.Citation, len(rankedChunks))
 	citResults := make([]CitationResult, len(rankedChunks))
 	for i, c := range rankedChunks {
 		cits[i] = &entities.Citation{
-			ID:             chatNewID(),
+			ID:             s.ids.New(),
 			MessageID:      assistantMsg.ID,
 			ChunkID:        c.ID,
 			StartTimestamp: c.StartTimestamp,
@@ -356,12 +395,4 @@ func (s *Service) Send(
 		Citations:  citResults,
 		Confidence: confidence,
 	}, nil
-}
-
-func chatNewID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }

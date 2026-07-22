@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"course-assistant/internal/infrastructure/security"
+	"archadilm/internal/infrastructure/security"
 )
 
 type contextKey string
