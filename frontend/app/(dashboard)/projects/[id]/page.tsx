@@ -63,10 +63,10 @@ export default function ProjectChoicePage() {
         >
           <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>📁</div>
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-2xl)', fontWeight: 700, marginBottom: 'var(--space-3)' }}>
-            Index Materials
+            Manage sources
           </h2>
           <p style={{ color: 'var(--color-ink-secondary)', fontSize: 'var(--text-base)', lineHeight: 1.6, margin: 0 }}>
-            Upload PDFs, videos, URLs, subtitles, or ZIP files to process and index into this project.
+            Bring together PDFs, documents, archives, web pages, video links, transcripts, and notes in one searchable workspace.
           </p>
         </button>
 

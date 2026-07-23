@@ -90,7 +90,10 @@ func (w *ParserWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 			return
 		}
 		if err := w.process(ctx, courseID, docID, qe.TraceID); err == nil {
-			_ = w.succeedJob(ctx, "", job, entities.CourseStatusParsing)
+			if err := w.succeedJob(ctx, "", job, entities.CourseStatusChunking); err != nil {
+				log.Printf("metadata: complete job %s: %v", job.ID, err)
+				return
+			}
 			return
 		} else {
 			w.failJob(ctx, "", job, "parsing", courseID, qe.TraceID, err)
@@ -140,7 +143,7 @@ func (w *ParserWorker) process(ctx context.Context, courseID, docID, traceID str
 			return fmt.Errorf("parser: pdf: %w", err)
 		}
 
-	case entities.SourceTypeURL:
+	case entities.SourceTypeURL, entities.SourceTypeVideo:
 		normalized, err = parseURL(doc, w.aiClient)
 		if err != nil {
 			return fmt.Errorf("parser: url: %w", err)

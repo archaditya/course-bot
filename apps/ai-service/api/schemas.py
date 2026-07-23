@@ -31,7 +31,7 @@ class SummaryGenerationResponse(BaseModel):
 
 class ChunkData(BaseModel):
     chunk_id: str
-    document_id: str
+    document_id: Optional[str] = None
     content: str
     start_timestamp: Optional[int] = None
     end_timestamp: Optional[int] = None

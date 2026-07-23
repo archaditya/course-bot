@@ -14,6 +14,7 @@ const (
 // A User authenticates via Google or email/password, and owns Workspaces.
 type User struct {
 	ID           string
+	FullName     string
 	Email        string
 	PasswordHash string // empty when AuthProvider is google
 	AuthProvider AuthProvider

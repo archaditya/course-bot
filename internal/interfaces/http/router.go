@@ -69,15 +69,18 @@ func NewRouter(deps Dependencies) http.Handler {
 	deps.UploadHandler.Register(protected)
 	deps.ChatHandler.Register(protected)
 	deps.StatusHandler.Register(protected)
+	protected.HandleFunc("GET /auth/me", deps.AuthHandler.me)
 
 	top := http.NewServeMux()
 	top.Handle("/", public)
 
-	// Protected route prefixes
+	// Protected route prefixes — All require valid Bearer token
 	auth := RequireAuth(deps.JWTSigningKey)
+	top.Handle("/auth/me", auth(protected))
 	top.Handle("/projects", auth(protected))
 	top.Handle("/projects/", auth(protected))
 	top.Handle("/courses/", auth(protected))
+	top.Handle("/collections/", auth(protected))
 	top.Handle("/conversations", auth(protected))
 	top.Handle("/conversations/", auth(protected))
 
@@ -115,9 +118,9 @@ func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		log.Printf("api: %s %s", r.Method, r.URL.Path)
-		
+
 		next.ServeHTTP(w, r)
-        
-        log.Printf("api: %s %s completed in %v", r.Method, r.URL.Path, time.Since(start))
-    })
+
+		log.Printf("api: %s %s completed in %v", r.Method, r.URL.Path, time.Since(start))
+	})
 }

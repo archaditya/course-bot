@@ -14,8 +14,8 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # API
-    api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_host: str = os.getenv("AI_SERVICE_HOST", "127.0.0.1")
+    api_port: int = int(os.getenv("AI_SERVICE_PORT", "8000"))
     
     # OpenAI
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")

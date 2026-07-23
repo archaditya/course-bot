@@ -70,10 +70,10 @@ func NewService(
 
 // MessageResult is the final assembled response after the pipeline completes.
 type MessageResult struct {
-	MessageID  string
-	Content    string
-	Citations  []CitationResult
-	Confidence string // "normal" | "low_confidence"
+	MessageID  string           `json:"id"`
+	Content    string           `json:"content"`
+	Citations  []CitationResult `json:"citations"`
+	Confidence string           `json:"confidence"` // "normal" | "low_confidence"
 }
 
 // CitationResult is the client-facing citation shape from
@@ -258,7 +258,11 @@ func (s *Service) Send(
 	candidates := make([]provider.RerankCandidate, 0, len(mergedResults))
 	for _, r := range mergedResults {
 		if c, ok := chunkByID[r.ChunkID]; ok {
-			candidates = append(candidates, provider.RerankCandidate{ChunkID: c.ID, Content: c.Content})
+			candidates = append(candidates, provider.RerankCandidate{
+				ChunkID:    c.ID,
+				DocumentID: c.DocumentID,
+				Content:    c.Content,
+			})
 		}
 	}
 	ranked, err := s.aiClient.Rerank(ctx, userContent, candidates)

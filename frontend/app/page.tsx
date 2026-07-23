@@ -16,9 +16,9 @@ export default function RootPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'var(--color-paper)',
+        background: '#0b1326',
       }}>
-        <Spinner size={32} />
+        <Spinner size={32} color="var(--color-primary)" />
       </div>
     );
   }

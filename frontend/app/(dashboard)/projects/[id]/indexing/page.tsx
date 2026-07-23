@@ -16,12 +16,12 @@ interface SourceOption {
 }
 
 const SOURCES: SourceOption[] = [
-  { id: 'pdf', label: 'PDF Document', icon: '📄', desc: 'Upload textbooks, slides, or papers', accept: '.pdf', inputType: 'file' },
+  { id: 'pdf', label: 'PDF & documents', icon: '📄', desc: 'Papers, handbooks, slides, DOCX and text files', accept: '.pdf', inputType: 'file' },
   { id: 'video_url', label: 'Video URL', icon: '🎬', desc: 'YouTube or online video URL', inputType: 'url' },
-  { id: 'upload', label: 'Upload Subtitles', icon: '📁', desc: 'SRT or VTT subtitle transcripts', accept: '.srt,.vtt', inputType: 'file' },
+  { id: 'upload', label: 'Video transcripts', icon: '📁', desc: 'SRT/VTT transcripts with timestamp citations', accept: '.srt,.vtt', inputType: 'file' },
   { id: 'url', label: 'Web URL', icon: '🌐', desc: 'Webpage or article link', inputType: 'url' },
   { id: 'text', label: 'Raw Text', icon: '📝', desc: 'Paste lecture notes or text', inputType: 'text' },
-  { id: 'zip', label: 'ZIP Archive', icon: '📦', desc: 'Archive of SRT, VTT, PDF, TXT files', accept: '.zip', inputType: 'file' },
+  { id: 'zip', label: 'ZIP Archive', icon: '📦', desc: 'Batch import supported files from an archive', accept: '.zip', inputType: 'file' },
 ];
 
 export default function IndexingPage() {
@@ -52,15 +52,15 @@ export default function IndexingPage() {
           ← Back to Choice Page
         </button>
         <Button size="sm" onClick={() => router.push(`/projects/${projectId}/chat`)}>
-          Go to Chat Assistant →
+          Ask your knowledge base →
         </Button>
       </div>
 
       <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-3xl)', fontWeight: 700, marginBottom: 'var(--space-2)' }}>
-        Index Materials
+        Source library
       </h1>
       <p style={{ color: 'var(--color-ink-secondary)', marginBottom: 'var(--space-8)' }}>
-        Click a source card to upload and start indexing into this project.
+        Add files, archives, URLs, video links, transcripts, and notes to this knowledge workspace.
       </p>
 
       {/* ── 6 SOURCE CARDS ─────────────────────────────────────────────────── */}
@@ -94,13 +94,13 @@ export default function IndexingPage() {
 
       {/* ── LIVE INDEXED MATERIALS LIST ────────────────────────────────────── */}
       <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-xl)', marginBottom: 'var(--space-4)' }}>
-        Indexed Materials ({coursesData?.items?.length ?? 0})
+        Knowledge collections ({coursesData?.items?.length ?? 0})
       </h2>
 
       {isLoading ? (
         <Spinner />
       ) : !coursesData?.items?.length ? (
-        <p style={{ color: 'var(--color-ink-muted)' }}>No materials indexed yet. Select a source above to add your first file.</p>
+        <p style={{ color: 'var(--color-ink-muted)' }}>No sources yet. Add your first document, archive, link, video transcript, or note above.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {coursesData.items.map((c: Course) => (

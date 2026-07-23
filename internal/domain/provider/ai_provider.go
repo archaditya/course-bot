@@ -61,8 +61,9 @@ type RankedChunk struct {
 }
 
 type RerankCandidate struct {
-	ChunkID string
-	Content string
+	ChunkID    string
+	DocumentID string
+	Content    string
 }
 
 type RerankerProvider interface {

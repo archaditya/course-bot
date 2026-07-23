@@ -21,6 +21,10 @@ func NewUploadHandler(svc *upload.Service) *UploadHandler {
 }
 
 func (h *UploadHandler) Register(mux *http.ServeMux) {
+	// Collection is the public resource name. Course endpoints remain aliases
+	// while existing clients migrate.
+	mux.HandleFunc("POST /collections/{id}/upload", h.upload)
+	mux.HandleFunc("POST /collections/{courseID}/sources", h.handleAddSource)
 	mux.HandleFunc("POST /courses/{id}/upload", h.upload)
 	mux.HandleFunc("POST /courses/{courseID}/sources", h.handleAddSource)
 }
@@ -90,7 +94,7 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if strings.Contains(err.Error(), "unsupported file type") {
 			WriteError(w, http.StatusBadRequest, "UNSUPPORTED_FILE_TYPE",
-				"Supported: .srt, .vtt, .pdf, .docx, .txt, .md, .zip")
+				"Supported: .pdf, .docx, .txt, .md, .srt, .vtt, or .zip")
 		} else {
 			notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
 		}

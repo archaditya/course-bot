@@ -1,57 +1,76 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  apiListCourses,
   apiCreateConversation,
   apiGetChunk,
   getToken,
-  type Course,
+  type Collection,
   type ChunkDetail,
-} from '@/lib/api';
-import { Button, Spinner, Badge, CitationMarker } from '@/design-system';
+  apiListCollections,
+} from "@/lib/api";
+import { Spinner, CitationMarker } from "@/design-system";
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
-  citations?: Array<{ chunk_id: string; document_id: string; start_timestamp?: number; title?: string }>;
+  citations?: Array<{
+    chunk_id: string;
+    document_id: string;
+    start_timestamp?: number;
+    title?: string;
+  }>;
 }
 
 export default function ProjectChatPage() {
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<
+    string | null
+  >(null);
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [selectedChunk, setSelectedChunk] = useState<ChunkDetail | null>(null);
   const [loadingChunk, setLoadingChunk] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputQuery, setInputQuery] = useState('');
+  const [inputQuery, setInputQuery] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
+  const [streamingContent, setStreamingContent] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Load Indexed Courses
+  // Poll courses list every 3s if any course is still processing
   const { data: coursesData } = useQuery({
-    queryKey: ['courses', projectId],
-    queryFn: () => apiListCourses(projectId),
+    queryKey: ["courses", projectId],
+    queryFn: () => apiListCollections(projectId),
+    refetchInterval: (query) => {
+      const hasProcessing = query.state.data?.items?.some(
+        (c) => !["INDEXED", "CREATED", "FAILED"].includes(c.status),
+      );
+      return hasProcessing ? 3000 : false;
+    },
   });
 
-  useEffect(() => {
-    if (coursesData?.items?.length) {
-      const indexed = coursesData.items.find((c) => c.status === 'INDEXED');
-      setSelectedCourseId(indexed?.id ?? coursesData.items[0].id);
-    }
-  }, [coursesData]);
+  const indexedCollections =
+    coursesData?.items.filter(
+      (collection) => collection.status === "INDEXED",
+    ) ?? [];
 
-  // Load Chunk detail when citation clicked
+  useEffect(() => {
+    if (coursesData?.items?.length && !selectedCollectionId) {
+      const indexed = coursesData.items.find((c) => c.status === "INDEXED");
+      setSelectedCollectionId(indexed?.id ?? coursesData.items[0].id);
+    }
+  }, [coursesData, selectedCollectionId]);
+
   useEffect(() => {
     if (!selectedChunkId) {
       setSelectedChunk(null);
@@ -65,7 +84,7 @@ export default function ProjectChatPage() {
   }, [selectedChunkId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
   const handleSendMessage = useCallback(async () => {
@@ -79,48 +98,62 @@ export default function ProjectChatPage() {
       setConversationId(conv.id);
     }
 
-    const targetCourseId = selectedCourseId || coursesData?.items?.[0]?.id || '';
+    const targetCollectionId = selectedCollectionId;
 
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text };
+    if (!targetCollectionId) {
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: `${Date.now()}-no-source`,
+          role: 'assistant',
+          content: 'Please select an indexed source before asking a question.',
+        },
+      ]);
+      return;
+    }
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: text,
+    };
     setMessages((prev) => [...prev, userMsg]);
-    setInputQuery('');
+    setInputQuery("");
     setIsStreaming(true);
-    setStreamingContent('');
+    setStreamingContent("");
 
-    const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+    const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
     const token = getToken();
 
     try {
       const res = await fetch(`${BASE}/conversations/${convId}/messages`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ content: text, course_id: targetCourseId }),
+        body: JSON.stringify({ content: text, course_id: targetCollectionId }),
       });
 
       if (!res.ok || !res.body) throw new Error(`Server error: ${res.status}`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let fullText = '';
+      let fullText = "";
       let resultData: Message | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         const chunkText = decoder.decode(value);
-        const lines = chunkText.split('\n');
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
+        for (const line of chunkText.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
           const payload = line.slice(6);
-          if (payload === '[DONE]') break;
-          if (payload.startsWith('[RESULT]')) {
+          if (payload === "[DONE]") break;
+          if (payload.startsWith("[RESULT]")) {
             try {
               resultData = JSON.parse(payload.slice(8).trim());
-            } catch {}
+            } catch { }
             continue;
           }
           fullText += payload;
@@ -128,133 +161,642 @@ export default function ProjectChatPage() {
         }
       }
 
-      const assistantMsg: Message = {
-        id: resultData?.id ?? Date.now().toString() + '-a',
-        role: 'assistant',
-        content: fullText,
-        citations: resultData?.citations,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-      setStreamingContent('');
+      const citationsList = resultData?.citations || (resultData as any)?.Citations;
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: resultData?.id ?? Date.now().toString() + "-a",
+          role: "assistant",
+          content: fullText,
+          citations: citationsList,
+        },
+      ]);
+      setStreamingContent("");
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { id: Date.now().toString() + '-err', role: 'assistant', content: `Error: ${err instanceof Error ? err.message : 'Failed'}` },
+        {
+          id: Date.now().toString() + "-err",
+          role: "assistant",
+          content: `Error: ${err instanceof Error ? err.message : "Query failed"}`,
+        },
       ]);
     } finally {
       setIsStreaming(false);
     }
-  }, [inputQuery, isStreaming, conversationId, projectId, selectedCourseId, coursesData]);
+  }, [
+    inputQuery,
+    isStreaming,
+    conversationId,
+    projectId,
+    selectedCollectionId,
+    coursesData,
+  ]);
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 65px)', margin: '-var(--space-8)' }}>
-      {/* ── LEFT SIDEBAR ───────────────────────────────────────────────────── */}
-      <aside style={{ width: '260px', background: 'var(--color-surface)', borderRight: '1px solid var(--color-border-subtle)', padding: 'var(--space-4)', display: 'flex', flexDirection: 'column' }}>
-        <button
-          onClick={() => router.push(`/projects/${projectId}`)}
-          style={{ background: 'none', border: 'none', color: 'var(--color-ink-muted)', cursor: 'pointer', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-3)' }}
+    <div
+      style={{
+        display: "flex",
+        height: "calc(100vh - 64px)",
+        margin: "-32px -40px",
+        overflow: "hidden",
+        background: "var(--color-background)",
+        position: "relative",
+      }}
+    >
+      <aside
+        style={{
+          width: "280px",
+          flexShrink: 0,
+          borderRight: "1px solid rgba(155, 155, 255, 0.18)",
+          display: "flex",
+          flexDirection: "column",
+          background: "rgba(10, 18, 38, 0.55)",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 18px 14px",
+            borderBottom: "1px solid rgba(155, 155, 255, 0.14)",
+          }}
         >
-          ← Choice Page
-        </button>
+          <button
+            type="button"
+            onClick={() => router.push(`/projects/${projectId}`)}
+            style={{
+              border: 0,
+              background: "transparent",
+              color: "var(--color-primary)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: 0,
+              fontSize: "12px",
+              fontWeight: 600,
+              marginBottom: "16px",
+            }}
+          >
+            <span
+              className="material-symbols-outlined"
+              style={{ fontSize: "17px" }}
+            >
+              arrow_back
+            </span>
+            Back to project
+          </button>
 
-        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-sm)', textTransform: 'uppercase', color: 'var(--color-ink-muted)', marginBottom: 'var(--space-3)' }}>
-          Indexed Sources
-        </h3>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: "15px",
+                  fontWeight: 700,
+                  color: "var(--color-on-surface)",
+                }}
+              >
+                Indexed sources
+              </h2>
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: "11px",
+                  color: "var(--color-on-surface-variant)",
+                }}
+              >
+                Ready to use in chat
+              </p>
+            </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-          {coursesData?.items.map((c: Course) => (
-            <button
-              key={c.id}
-              onClick={() => setSelectedCourseId(c.id)}
+            <span
               style={{
-                padding: 'var(--space-2) var(--space-3)',
-                borderRadius: 'var(--radius-md)',
-                background: selectedCourseId === c.id ? 'var(--color-accent-light)' : 'transparent',
-                border: 'none',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontSize: 'var(--text-sm)',
+                fontSize: "11px",
+                color: "var(--color-secondary)",
+                fontWeight: 700,
               }}
             >
-              📄 {c.title}
-            </button>
-          ))}
+              {indexedCollections.length}
+            </span>
+          </div>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+          }}
+        >
+          {indexedCollections.length === 0 ? (
+            <div
+              style={{
+                padding: "18px 10px",
+                textAlign: "center",
+                color: "var(--color-on-surface-variant)",
+                fontSize: "12px",
+                lineHeight: 1.6,
+              }}
+            >
+              No indexed sources yet.
+              <br />
+              Add and index materials from the project page.
+            </div>
+          ) : (
+            indexedCollections.map((collection) => {
+              const isSelected = collection.id === selectedCollectionId;
+
+              return (
+                <button
+                  key={collection.id}
+                  type="button"
+                  onClick={() => setSelectedCollectionId(collection.id)}
+                  style={{
+                    width: "100%",
+                    border: `1px solid ${isSelected
+                        ? "var(--color-primary)"
+                        : "rgba(155, 155, 255, 0.18)"
+                      }`,
+                    background: isSelected
+                      ? "rgba(140, 136, 255, 0.12)"
+                      : "transparent",
+                    borderRadius: "10px",
+                    padding: "12px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: "var(--color-on-surface)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "9px",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      className="material-symbols-outlined"
+                      style={{
+                        color: "var(--color-primary)",
+                        fontSize: "18px",
+                      }}
+                    >
+                      description
+                    </span>
+
+                    <div style={{ minWidth: 0 }}>
+                      <p
+                        style={{
+                          margin: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          fontSize: "13px",
+                          fontWeight: 650,
+                        }}
+                      >
+                        {collection.title}
+                      </p>
+
+                      <p
+                        style={{
+                          margin: "4px 0 0",
+                          color: "var(--color-secondary)",
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        INDEXED
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       </aside>
 
-      {/* ── MAIN CHAT PANEL ────────────────────────────────────────────────── */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+      {/* ── MAIN CHAT PANE ────────────────────────────────────────── */}
+      <section
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          position: "relative",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "16px 24px",
+            borderBottom: "1px solid rgba(70,69,84,0.3)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                fontFamily: "var(--font-geist)",
+                fontSize: "18px",
+                fontWeight: 700,
+                color: "var(--color-on-surface)",
+                margin: 0,
+              }}
+            >
+              archadiLM Assistant
+            </h2>
+            <p
+              style={{
+                fontFamily: "var(--font-inter)",
+                fontSize: "12px",
+                color: "var(--color-on-surface-variant)",
+                margin: 0,
+              }}
+            >
+              Ask questions across all indexed source material with grounded
+              citations.
+            </p>
+          </div>
+        </div>
+
+        {/* Message Stream */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "24px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "20px",
+            paddingBottom: "120px",
+          }}
+        >
           {messages.length === 0 && !isStreaming && (
-            <div style={{ margin: 'auto', textAlign: 'center' }}>
-              <p style={{ fontSize: '3rem', marginBottom: 'var(--space-2)' }}>💬</p>
-              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-xl)' }}>Ask anything about this project</h3>
+            <div
+              style={{ margin: "auto", textAlign: "center", maxWidth: "400px" }}
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{
+                  color: "var(--color-primary)",
+                  fontSize: "48px",
+                  marginBottom: "12px",
+                }}
+              >
+                psychology
+              </span>
+              <h3
+                style={{
+                  fontFamily: "var(--font-geist)",
+                  fontSize: "18px",
+                  fontWeight: 600,
+                  marginBottom: "8px",
+                }}
+              >
+                Ask anything about your material
+              </h3>
+              <p
+                style={{
+                  fontFamily: "var(--font-inter)",
+                  fontSize: "13px",
+                  color: "var(--color-on-surface-variant)",
+                }}
+              >
+                Index PDFs, web links, or text notes on the left pane and get
+                vector-grounded responses with exact citations.
+              </p>
             </div>
           )}
 
           {messages.map((m) => (
-            <div key={m.id} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-              <div style={{ maxWidth: '80%', background: m.role === 'user' ? 'var(--color-accent)' : 'var(--color-surface)', color: m.role === 'user' ? '#fff' : 'var(--color-ink)', padding: 'var(--space-4)', borderRadius: 'var(--radius-xl)' }}>
-                {m.role === 'user' ? (
-                  <p style={{ margin: 0 }}>{m.content}</p>
-                ) : (
-                  <>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                    {m.citations && (
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-                        {m.citations.map((c, i) => (
-                          <CitationMarker key={c.chunk_id} index={i} chunkId={c.chunk_id} title={c.title} startTimestamp={c.start_timestamp} onJumpTo={() => setSelectedChunkId(c.chunk_id)} />
-                        ))}
+            <div
+              key={m.id}
+              style={{
+                display: "flex",
+                justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+              }}
+            >
+              {m.role === "user" ? (
+                <div
+                  style={{
+                    maxWidth: "80%",
+                    padding: "12px 16px",
+                    borderRadius: "16px",
+                    background: "var(--color-surface-container-highest)",
+                    color: "var(--color-on-surface)",
+                    fontSize: "14px",
+                  }}
+                >
+                  {m.content}
+                </div>
+              ) : (
+                <div
+                  className="glass-panel"
+                  style={{
+                    maxWidth: "90%",
+                    padding: "20px",
+                    borderRadius: "16px",
+                  }}
+                >
+                  {/* Markdown Response Content */}
+                  <div style={{ fontSize: "14px", lineHeight: 1.7 }}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {m.content}
+                    </ReactMarkdown>
+                  </div>
+
+                  {/* Grounded Source Boxes below assistant message */}
+                  {m.citations && m.citations.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        paddingTop: "14px",
+                        borderTop: "1px solid rgba(155, 155, 255, 0.14)",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          color: "var(--color-secondary)",
+                          letterSpacing: "0.05em",
+                          textTransform: "uppercase",
+                          margin: "0 0 8px 0",
+                        }}
+                      >
+                        Cited Sources ({m.citations.length})
+                      </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "8px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {m.citations.map((c, i) => {
+                          const formatTime = (secs?: number): string => {
+                            if (secs == null) return "";
+                            const m = Math.floor(secs / 60);
+                            const s = secs % 60;
+                            return `${m}:${String(s).padStart(2, "0")}`;
+                          };
+
+                          return (
+                            <button
+                              key={c.chunk_id + "-" + i}
+                              type="button"
+                              onClick={() => setSelectedChunkId(c.chunk_id)}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                padding: "8px 12px",
+                                background: "rgba(10, 18, 38, 0.6)",
+                                border: "1px solid rgba(155, 155, 255, 0.2)",
+                                borderRadius: "8px",
+                                cursor: "pointer",
+                                color: "var(--color-on-surface)",
+                                textAlign: "left",
+                                transition: "all 0.2s ease",
+                              }}
+                            >
+                              <span
+                                className="material-symbols-outlined"
+                                style={{
+                                  fontSize: "16px",
+                                  color: "var(--color-primary)",
+                                }}
+                              >
+                                description
+                              </span>
+                              <div>
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: "12px",
+                                    fontWeight: 600,
+                                    maxWidth: "180px",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {c.title || `Source [${i + 1}]`}
+                                </p>
+                                {c.start_timestamp != null && (
+                                  <span
+                                    style={{
+                                      fontSize: "10px",
+                                      color: "var(--color-secondary)",
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    ⏱ {formatTime(c.start_timestamp)}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
+                    </div>
+                  )}
+
+                </div>
+              )}
             </div>
           ))}
 
           {isStreaming && (
-            <div style={{ background: 'var(--color-surface)', padding: 'var(--space-4)', borderRadius: 'var(--radius-xl)' }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingContent}</ReactMarkdown>
+            <div
+              className="glass-panel"
+              style={{ padding: "20px", borderRadius: "16px" }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "8px",
+                }}
+              >
+                <Spinner size={14} color="var(--color-primary)" />
+                <span
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--color-primary)",
+                    fontFamily: "var(--font-geist)",
+                  }}
+                >
+                  Generating response...
+                </span>
+              </div>
+              <div style={{ fontSize: "14px", lineHeight: 1.7 }}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {streamingContent}
+                </ReactMarkdown>
+              </div>
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        {/* Prompt Input Box */}
-        <div style={{ padding: 'var(--space-4) var(--space-6)', borderTop: '1px solid var(--color-border-subtle)', background: 'var(--color-surface)' }}>
-          <div style={{ display: 'flex', gap: 'var(--space-3)', maxWidth: '900px', margin: '0 auto' }}>
-            <textarea
+        {/* Input Bar */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            padding: "20px 24px",
+            background:
+              "linear-gradient(to top, var(--color-background) 70%, transparent)",
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              maxWidth: "900px",
+              margin: "0 auto",
+              borderRadius: "16px",
+              padding: "8px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <input
+              type="text"
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
-              placeholder="Type a Query here..."
-              rows={1}
-              style={{ flex: 1, padding: '12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', background: 'var(--color-paper)', outline: 'none' }}
+              onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+              placeholder="Ask a question about your indexed materials..."
+              disabled={isStreaming || indexedCollections.length === 0}
+              style={{
+                flex: 1,
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                fontFamily: "var(--font-inter)",
+                fontSize: "14px",
+                color: "var(--color-on-surface)",
+              }}
             />
-            <Button onClick={handleSendMessage} disabled={!inputQuery.trim() || isStreaming}>Send</Button>
+            <button
+              onClick={handleSendMessage}
+              disabled={!inputQuery.trim() || isStreaming}
+              style={{
+                padding: "10px 20px",
+                background: "var(--color-primary)",
+                color: "var(--color-on-primary)",
+                border: "none",
+                borderRadius: "10px",
+                fontFamily: "var(--font-geist)",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor:
+                  !inputQuery.trim() || isStreaming ? "not-allowed" : "pointer",
+                opacity: !inputQuery.trim() || isStreaming ? 0.5 : 1,
+              }}
+            >
+              Ask
+            </button>
           </div>
         </div>
-      </main>
+      </section>
 
-      {/* ── RIGHT SIDEBAR (Citation Detail) ────────────────────────────────── */}
-      <aside style={{ width: '340px', background: 'var(--color-surface)', borderLeft: '1px solid var(--color-border-subtle)', transform: selectedChunkId ? 'translateX(0)' : 'translateX(100%)', transition: 'transform var(--transition-slow)', position: 'fixed', top: 65, right: 0, bottom: 0, padding: 'var(--space-5)', zIndex: 50 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
-          <h4 style={{ fontFamily: 'var(--font-display)', margin: 0 }}>Source Info</h4>
-          <button onClick={() => setSelectedChunkId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
-        </div>
-        {loadingChunk ? (
-          <Spinner />
-        ) : selectedChunk ? (
-          <div>
-            <h4 style={{ fontFamily: 'var(--font-display)', marginBottom: 'var(--space-2)' }}>{selectedChunk.title}</h4>
-            {selectedChunk.start_timestamp != null && <Badge variant="accent">⏱ {selectedChunk.start_timestamp}s</Badge>}
-            <p style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-sm)', lineHeight: 1.7, background: 'var(--color-paper)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)' }}>
-              {selectedChunk.content}
-            </p>
-          </div>
-        ) : null}
-      </aside>
+      {/* ── RIGHT PANE: Chunk Detail ──────────────────────────────── */}
+      <AnimatePresence>
+        {selectedChunkId && (
+          <motion.aside
+            initial={{ x: 350, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 350, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              width: "320px",
+              minWidth: "320px",
+              background: "var(--color-surface-dim)",
+              borderLeft: "1px solid var(--color-outline-variant)",
+              padding: "24px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <h3
+                style={{
+                  fontFamily: "var(--font-geist)",
+                  fontSize: "16px",
+                  margin: 0,
+                }}
+              >
+                Source Chunk
+              </h3>
+              <button
+                onClick={() => setSelectedChunkId(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--color-on-surface-variant)",
+                  cursor: "pointer",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            {loadingChunk ? (
+              <Spinner size={24} color="var(--color-primary)" />
+            ) : selectedChunk ? (
+              <div>
+                <h4
+                  style={{
+                    fontFamily: "var(--font-geist)",
+                    fontSize: "14px",
+                    marginBottom: "8px",
+                    color: "var(--color-primary)",
+                  }}
+                >
+                  {selectedChunk.title || "Source Citation"}
+                </h4>
+                <p
+                  style={{
+                    fontSize: "13px",
+                    lineHeight: 1.6,
+                    background: "rgba(45,52,73,0.3)",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    color: "var(--color-on-surface-variant)",
+                  }}
+                >
+                  {selectedChunk.content}
+                </p>
+              </div>
+            ) : null}
+          </motion.aside>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

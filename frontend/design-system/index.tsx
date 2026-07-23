@@ -24,13 +24,14 @@ export function Button({
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
-    fontFamily: 'var(--font-ui)',
-    fontWeight: 500,
-    borderRadius: 'var(--radius-md)',
+    fontFamily: 'var(--font-geist)',
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    borderRadius: '10px',
     border: '1px solid transparent',
     cursor: disabled || loading ? 'not-allowed' : 'pointer',
     opacity: disabled || loading ? 0.6 : 1,
-    transition: 'background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast)',
+    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
     whiteSpace: 'nowrap',
   };
 
@@ -42,24 +43,25 @@ export function Button({
 
   const variants: Record<string, React.CSSProperties> = {
     primary: {
-      background: 'var(--color-accent)',
-      color: '#fff',
-      borderColor: 'var(--color-accent)',
+      background: 'var(--color-primary)',
+      color: 'var(--color-on-primary)',
+      borderColor: 'var(--color-primary)',
+      boxShadow: '0 4px 20px rgba(192,193,255,0.2)',
     },
     secondary: {
-      background: 'var(--color-surface)',
-      color: 'var(--color-ink)',
-      borderColor: 'var(--color-border)',
+      background: 'rgba(45,52,73,0.5)',
+      color: 'var(--color-on-surface)',
+      borderColor: 'var(--color-outline-variant)',
     },
     ghost: {
       background: 'transparent',
-      color: 'var(--color-ink-secondary)',
+      color: 'var(--color-on-surface-variant)',
       borderColor: 'transparent',
     },
     danger: {
-      background: 'var(--color-error)',
-      color: '#fff',
-      borderColor: 'var(--color-error)',
+      background: 'transparent',
+      color: 'var(--color-error)',
+      borderColor: 'rgba(255,180,171,0.3)',
     },
   };
 
@@ -137,100 +139,37 @@ interface CitationMarkerProps {
   chunkId: string;
   title?: string;
   startTimestamp?: number;
-  onJumpTo?: (ts: number) => void;
+  onJumpTo?: (ts?: number) => void;
 }
 
 export function CitationMarker({ index, title, startTimestamp, onJumpTo }: CitationMarkerProps) {
-  const [open, setOpen] = React.useState(false);
-
-  const formatTime = (secs: number): string => {
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    return h > 0
-      ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-      : `${m}:${String(s).padStart(2, '0')}`;
-  };
-
   return (
-    <span style={{ position: 'relative', display: 'inline-block' }}>
-      <button
-        onClick={() => setOpen(!open)}
-        aria-label={`Citation ${index + 1}${title ? `: ${title}` : ''}`}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '18px',
-          height: '18px',
-          background: 'var(--color-accent-light)',
-          border: '1.5px solid var(--color-accent-border)',
-          borderRadius: '3px',
-          color: 'var(--color-accent)',
-          fontSize: '10px',
-          fontFamily: 'var(--font-mono)',
-          fontWeight: 600,
-          cursor: 'pointer',
-          verticalAlign: 'super',
-          marginLeft: '2px',
-          transition: 'background var(--transition-fast)',
-          position: 'relative',
-          top: '-2px',
-        }}
-      >
-        {index + 1}
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute',
-          bottom: '28px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: 'var(--shadow-lg)',
-          padding: 'var(--space-3) var(--space-4)',
-          minWidth: '220px',
-          maxWidth: '320px',
-          zIndex: 50,
-        }}>
-          {title && (
-            <p style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 600,
-              fontSize: 'var(--text-sm)',
-              color: 'var(--color-ink)',
-              marginBottom: 'var(--space-2)',
-            }}>{title}</p>
-          )}
-          {startTimestamp != null && (
-            <button
-              onClick={() => { onJumpTo?.(startTimestamp); setOpen(false); }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--space-2)',
-                background: 'var(--color-accent-light)',
-                border: '1px solid var(--color-accent-border)',
-                borderRadius: 'var(--radius-sm)',
-                padding: 'var(--space-1) var(--space-3)',
-                color: 'var(--color-accent)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--text-xs)',
-                cursor: 'pointer',
-                width: '100%',
-              }}
-            >
-              ▶ Jump to {formatTime(startTimestamp)}
-            </button>
-          )}
-        </div>
-      )}
-    </span>
+    <button
+      onClick={() => onJumpTo?.(startTimestamp)}
+      title={title ? `${title} (Click to view source)` : "Click to view source"}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "2px 6px",
+        background: "rgba(140, 136, 255, 0.18)",
+        border: "1px solid rgba(140, 136, 255, 0.4)",
+        borderRadius: "4px",
+        color: "var(--color-primary)",
+        fontSize: "11px",
+        fontFamily: "var(--font-mono)",
+        fontWeight: 600,
+        cursor: "pointer",
+        verticalAlign: "middle",
+        margin: "0 2px",
+        transition: "all var(--transition-fast)",
+      }}
+    >
+      [{index + 1}]
+    </button>
   );
 }
+
 
 // ── ProcessingStepper ─────────────────────────────────────────────────────
 
@@ -322,16 +261,17 @@ export function Input({ label, error, id, style, ...rest }: InputProps) {
       )}
       <input
         id={id}
+        className="input-glow"
         style={{
-          fontFamily: 'var(--font-body)',
-          fontSize: 'var(--text-base)',
-          padding: '10px 14px',
-          border: `1px solid ${error ? 'var(--color-error)' : 'var(--color-border)'}`,
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--color-surface)',
-          color: 'var(--color-ink)',
+          fontFamily: 'var(--font-inter)',
+          fontSize: '13px',
+          padding: '12px 14px',
+          border: `1px solid ${error ? 'var(--color-error)' : 'var(--color-outline-variant)'}`,
+          borderRadius: '10px',
+          background: 'var(--color-surface-container-lowest)',
+          color: 'var(--color-on-surface)',
           outline: 'none',
-          transition: 'border-color var(--transition-fast), box-shadow var(--transition-fast)',
+          transition: 'border-color 0.2s, box-shadow 0.2s',
           width: '100%',
           ...style,
         }}

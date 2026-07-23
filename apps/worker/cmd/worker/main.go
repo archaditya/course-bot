@@ -63,7 +63,7 @@ func main() {
 	// ── AI Service client ──────────────────────────────────────────────────
 	aiServiceURL := os.Getenv("AI_SERVICE_URL")
 	if aiServiceURL == "" {
-		aiServiceURL = "http://localhost:8000"
+		aiServiceURL = "http://127.0.0.1:8000"
 	}
 	aiClient := llm.NewClient(aiServiceURL)
 

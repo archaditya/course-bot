@@ -1,3 +1,4 @@
+
 package worker
 
 import (
@@ -86,7 +87,10 @@ func (w *ChunkWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 			return
 		}
 		if err := w.process(ctx, courseID, docID, normalizedRef, qe.TraceID); err == nil {
-			_ = w.succeedJob(ctx, "", job, entities.CourseStatusChunking)
+			if err := w.succeedJob(ctx, "", job, entities.CourseStatusNormalizing); err != nil {
+				log.Printf("chunker: complete job %s: %v", job.ID, err)
+				return
+			}
 			return
 		} else {
 			w.failJob(ctx, "", job, "chunking", courseID, qe.TraceID, err)

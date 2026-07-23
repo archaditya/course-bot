@@ -70,8 +70,9 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([]provider.Vector, 
 // ── 2. provider.RerankerProvider ──────────────────────────────────────────
 
 type rerankChunk struct {
-	ChunkID string `json:"chunk_id"`
-	Content string `json:"content"`
+	ChunkID    string `json:"chunk_id"`
+	DocumentID string `json:"document_id,omitempty"`
+	Content    string `json:"content"`
 }
 
 type rerankRequest struct {
@@ -88,8 +89,9 @@ func (c *Client) Rerank(ctx context.Context, query string, candidates []provider
 	chunks := make([]rerankChunk, len(candidates))
 	for i, cand := range candidates {
 		chunks[i] = rerankChunk{
-			ChunkID: cand.ChunkID,
-			Content: cand.Content,
+			ChunkID:    cand.ChunkID,
+			DocumentID: cand.DocumentID,
+			Content:    cand.Content,
 		}
 	}
 

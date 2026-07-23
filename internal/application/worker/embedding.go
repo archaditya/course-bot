@@ -85,9 +85,21 @@ func (w *EmbeddingWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 			log.Printf("embedding: start job: %v", err)
 			return
 		}
+		if err := w.courses.UpdateStatus(
+			ctx,
+			"",
+			courseID,
+			entities.CourseStatusEmbedding,
+		); err != nil {
+			w.failJob(ctx, "", job, "embedding-status", courseID, qe.TraceID, err)
+			return
+		}
 		if err := w.process(ctx, courseID, chunksJSON, qe.TraceID, job); err == nil {
 			// Mark course INDEXED — terminal success state
-			_ = w.succeedJob(ctx, "", job, entities.CourseStatusIndexed)
+			if err := w.succeedJob(ctx, "", job, entities.CourseStatusIndexed); err != nil {
+				log.Printf("embedding: complete job %s: %v", job.ID, err)
+				return
+			}
 			// Publish INDEXED so Go API status updater pushes WebSocket notification
 			_ = w.queue.Publish(ctx, "pipeline:status", provider.Event{
 				Name:    "INDEXED",

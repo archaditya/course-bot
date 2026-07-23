@@ -114,7 +114,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		ServiceEnv:   envOrDefault("SERVICE_ENV", "local"),
-		AIServiceURL: envOrDefault("AI_SERVICE_URL", "http://localhost:8000"),
+		AIServiceURL: envOrDefault("AI_SERVICE_URL", "http://127.0.0.1:8000"),
 		Database:     DatabaseConfig{URL: os.Getenv("POSTGRES_URL")},
 		Redis:        RedisConfig{URL: os.Getenv("REDIS_URL")},
 		R2: R2Config{

@@ -111,11 +111,35 @@ func (r *CourseRepository) ListByProject(ctx context.Context, ws string, project
 // arrive — separate from the general Update method since pipeline status
 // transitions don't go through the same call path as a user renaming a
 // course.
-func (r *CourseRepository) UpdateStatus(ctx context.Context, ws string, id string, status entities.CourseStatus) error {
+func (r *CourseRepository) UpdateStatus(
+	ctx context.Context,
+	ws string,
+	id string,
+	status entities.CourseStatus,
+) error {
+	// Background workers are trusted internal callers. They do not carry a
+	// browser workspace claim, so use the internal update path.
+	if ws == "" {
+		res, err := r.db.ExecContext(
+			ctx,
+			`UPDATE courses SET status = $1, updated_at = now() WHERE id = $2`,
+			status,
+			id,
+		)
+		if err != nil {
+			return fmt.Errorf("postgres: update course status: %w", err)
+		}
+		return checkRowsAffected(res)
+	}
+
 	const q = `
-		UPDATE courses c SET status = $1, updated_at = now()
+		UPDATE courses c
+		SET status = $1, updated_at = now()
 		FROM projects p
-		WHERE c.id = $2 AND c.project_id = p.id AND p.workspace_id = $3`
+		WHERE c.id = $2
+		  AND c.project_id = p.id
+		  AND p.workspace_id = $3`
+
 	res, err := r.db.ExecContext(ctx, q, status, id, ws)
 	if err != nil {
 		return fmt.Errorf("postgres: update course status: %w", err)

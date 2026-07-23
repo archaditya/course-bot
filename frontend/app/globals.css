@@ -1,57 +1,78 @@
-/* Design token system — all visual decisions flow from these variables.
-   Visual direction: "study room", not "server dashboard".
-   Palette: paper-neutral base, ink text, amber-gold accent ("highlighted textbook passage").
-   Typography: Lora (display warmth) + Source Serif 4 (legible body) + JetBrains Mono (code/timestamps) */
+@import "tailwindcss";
 
-@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+/* ── Tailwind v4 Theme ────────────────────────────────────────────────────── */
+@theme {
+  /* Cognitive Workspace Palette */
+  --color-background:                #0b1326;
+  --color-surface:                   #0b1326;
+  --color-surface-dim:               #0b1326;
+  --color-surface-bright:            #31394d;
+  --color-surface-container-lowest:  #060e20;
+  --color-surface-container-low:     #131b2e;
+  --color-surface-container:         #171f33;
+  --color-surface-container-high:    #222a3d;
+  --color-surface-container-highest: #2d3449;
+  --color-surface-variant:           #2d3449;
+  --color-on-surface:                #dae2fd;
+  --color-on-surface-variant:        #c7c4d7;
+  --color-inverse-surface:           #dae2fd;
+  --color-inverse-on-surface:        #283044;
+  --color-outline:                   #908fa0;
+  --color-outline-variant:           #464554;
+  --color-surface-tint:              #c0c1ff;
+  --color-primary:                   #c0c1ff;
+  --color-on-primary:                #1000a9;
+  --color-primary-container:         #8083ff;
+  --color-on-primary-container:      #0d0096;
+  --color-inverse-primary:           #494bd6;
+  --color-primary-fixed:             #e1e0ff;
+  --color-primary-fixed-dim:         #c0c1ff;
+  --color-on-primary-fixed:          #07006c;
+  --color-on-primary-fixed-variant:  #2f2ebe;
+  --color-secondary:                 #4edea3;
+  --color-on-secondary:              #003824;
+  --color-secondary-container:       #00a572;
+  --color-on-secondary-container:    #00311f;
+  --color-secondary-fixed:           #6ffbbe;
+  --color-secondary-fixed-dim:       #4edea3;
+  --color-on-secondary-fixed:        #002113;
+  --color-on-secondary-fixed-variant: #005236;
+  --color-tertiary:                  #d0bcff;
+  --color-on-tertiary:               #3c0091;
+  --color-tertiary-container:        #a078ff;
+  --color-on-tertiary-container:     #340080;
+  --color-tertiary-fixed:            #e9ddff;
+  --color-tertiary-fixed-dim:        #d0bcff;
+  --color-on-tertiary-fixed:         #23005c;
+  --color-on-tertiary-fixed-variant: #5516be;
+  --color-error:                     #ffb4ab;
+  --color-on-error:                  #690005;
+  --color-error-container:           #93000a;
+  --color-on-error-container:        #ffdad6;
 
-/* ── Color tokens ─────────────────────────────────────────────────────────── */
-:root {
-  /* Paper-like neutrals */
-  --color-paper:         #F7F3EE;
-  --color-paper-subtle:  #EFE9E1;
-  --color-paper-muted:   #E2D9CE;
-  --color-surface:       #FFFFFF;
-  --color-border:        #D4C9BB;
-  --color-border-subtle: #E8DFD4;
+  /* Typography */
+  --font-geist:       'Geist', system-ui, sans-serif;
+  --font-inter:       'Inter', system-ui, sans-serif;
+  --font-mono:        'JetBrains Mono', 'Fira Code', monospace;
+  --font-display:     'Geist', system-ui, sans-serif;
+  --font-body:        'Inter', system-ui, sans-serif;
+  --font-ui:          'Geist', system-ui, sans-serif;
 
-  /* Ink */
-  --color-ink:           #1C1917;
-  --color-ink-secondary: #44403C;
-  --color-ink-muted:     #78716C;
-  --color-ink-faint:     #A8A29E;
+  /* Keep legacy font tokens for design-system compatibility */
+  --font-family-geist:      'Geist', system-ui, sans-serif;
+  --font-family-inter:      'Inter', system-ui, sans-serif;
+  --font-family-mono:       'JetBrains Mono', monospace;
 
-  /* Amber-gold accent — "highlighted textbook passage" */
-  --color-accent:        #B45309;  /* amber-700 */
-  --color-accent-light:  #FEF3C7;  /* amber-100 */
-  --color-accent-hover:  #92400E;  /* amber-800 */
-  --color-accent-border: #FCD34D;  /* amber-300 */
+  /* Spacing */
+  --spacing-xs:           4px;
+  --spacing-sm:           8px;
+  --spacing-md:           16px;
+  --spacing-lg:           24px;
+  --spacing-xl:           40px;
+  --spacing-sidebar:      280px;
+  --spacing-container-max: 1440px;
 
-  /* Status colors */
-  --color-success:       #16A34A;
-  --color-success-light: #DCFCE7;
-  --color-error:         #DC2626;
-  --color-error-light:   #FEE2E2;
-  --color-warning:       #D97706;
-  --color-warning-light: #FEF3C7;
-
-  /* ── Type scale ──────────────────────────────────────────────────────── */
-  --font-display:  'Lora', Georgia, serif;
-  --font-body:     'Source Serif 4', Georgia, serif;
-  --font-mono:     'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
-  --font-ui:       'Source Serif 4', system-ui, sans-serif;
-
-  --text-xs:   0.75rem;    /* 12px */
-  --text-sm:   0.875rem;   /* 14px */
-  --text-base: 1rem;       /* 16px */
-  --text-lg:   1.125rem;   /* 18px */
-  --text-xl:   1.25rem;    /* 20px */
-  --text-2xl:  1.5rem;     /* 24px */
-  --text-3xl:  1.875rem;   /* 30px */
-  --text-4xl:  2.25rem;    /* 36px */
-  --text-5xl:  3rem;       /* 48px */
-
-  /* ── Spacing ────────────────────────────────────────────────────────── */
+  /* Legacy spacing tokens (keep for backward compat with design-system) */
   --space-1:  0.25rem;
   --space-2:  0.5rem;
   --space-3:  0.75rem;
@@ -65,31 +86,67 @@
   --space-20: 5rem;
   --space-24: 6rem;
 
-  /* ── Radii ──────────────────────────────────────────────────────────── */
-  --radius-sm:  4px;
-  --radius-md:  8px;
-  --radius-lg:  12px;
-  --radius-xl:  16px;
-  --radius-2xl: 24px;
+  /* Border Radius */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-2xl:  24px;
+  --radius-3xl:  32px;
   --radius-full: 9999px;
 
-  /* ── Shadows ─────────────────────────────────────────────────────────── */
-  --shadow-sm:  0 1px 2px rgba(28,25,23,0.05);
-  --shadow-md:  0 4px 6px rgba(28,25,23,0.07), 0 1px 3px rgba(28,25,23,0.06);
-  --shadow-lg:  0 10px 15px rgba(28,25,23,0.07), 0 4px 6px rgba(28,25,23,0.05);
-  --shadow-xl:  0 20px 25px rgba(28,25,23,0.08), 0 10px 10px rgba(28,25,23,0.04);
+  /* Shadows */
+  --shadow-sm:     0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md:     0 4px 6px rgba(0,0,0,0.4);
+  --shadow-lg:     0 10px 15px rgba(0,0,0,0.5);
+  --shadow-glow-primary: 0 0 20px rgba(192,193,255,0.15);
+  --shadow-glow-secondary: 0 0 20px rgba(78,222,163,0.15);
 
-  /* ── Transitions ─────────────────────────────────────────────────────── */
-  --transition-fast:   120ms ease;
-  --transition-normal: 200ms ease;
-  --transition-slow:   350ms ease;
+  /* Transitions */
+  --transition-fast:   120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow:   350ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* ── Layout ──────────────────────────────────────────────────────────── */
-  --sidebar-width: 256px;
-  --content-max:   860px;
+  /* Legacy color tokens (keep for design-system components) */
+  --color-paper:         #0b1326;
+  --color-paper-subtle:  #131b2e;
+  --color-paper-muted:   #171f33;
+  --color-border:        #464554;
+  --color-border-subtle: #2d3449;
+  --color-ink:           #dae2fd;
+  --color-ink-secondary: #c7c4d7;
+  --color-ink-muted:     #908fa0;
+  --color-ink-faint:     #464554;
+  --color-accent:        #c0c1ff;
+  --color-accent-light:  rgba(192,193,255,0.1);
+  --color-accent-hover:  #8083ff;
+  --color-accent-border: rgba(192,193,255,0.3);
+  --color-success:       #4edea3;
+  --color-success-light: rgba(78,222,163,0.1);
+  --color-error-light:   rgba(255,180,171,0.1);
+  --color-warning:       #d0bcff;
+  --color-warning-light: rgba(208,188,255,0.1);
+  --color-surface-var:   #2d3449;
+  --sidebar-width:       280px;
+  --content-max:         860px;
 }
 
-/* ── Reset ──────────────────────────────────────────────────────────────── */
+/* ── Material Symbols ─────────────────────────────────────────────────────── */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-style: normal;
+  display: inline-block;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  word-wrap: normal;
+  white-space: nowrap;
+  direction: ltr;
+  user-select: none;
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -99,63 +156,153 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  color-scheme: dark;
 }
 
 body {
-  font-family: var(--font-body);
-  font-size: var(--text-base);
-  color: var(--color-ink);
-  background: var(--color-paper);
-  line-height: 1.7;
+  font-family: var(--font-inter);
+  font-size: 14px;
+  color: var(--color-on-surface);
+  background: var(--color-background);
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #2d3449;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover { background: #c0c1ff; }
+
+/* ── Focus ───────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Glass Components ─────────────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(19, 27, 46, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card-hover {
+  background: rgba(19, 27, 46, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-card-hover:hover {
+  border-color: rgba(192, 193, 255, 0.3);
+  background: rgba(23, 31, 51, 0.7);
+  transform: translateY(-4px);
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.1);
+}
+
+.glass-panel {
+  background: rgba(19, 27, 46, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-nav {
+  background: rgba(19, 27, 46, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(70, 69, 84, 0.5);
+}
+
+/* ── AI Aura Animations ──────────────────────────────────────────────────── */
+@keyframes aura-pulse {
+  0%, 100% { opacity: 0.15; transform: scale(1) translate(0, 0); }
+  50% { opacity: 0.3; transform: scale(1.15) translate(5%, 3%); }
+}
+
+@keyframes aura-drift {
+  0%, 100% { opacity: 0.1; transform: scale(1) translate(0, 0); }
+  33% { opacity: 0.2; transform: scale(1.1) translate(-5%, 5%); }
+  66% { opacity: 0.15; transform: scale(0.95) translate(3%, -3%); }
+}
+
+.ai-aura {
+  filter: blur(80px);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: aura-pulse 8s ease-in-out infinite;
+}
+
+.ai-aura-drift {
+  filter: blur(80px);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: aura-drift 12s ease-in-out infinite;
+}
+
+/* ── Shimmer Text ────────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  to { background-position: 200% center; }
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, #c0c1ff 0%, #4edea3 50%, #c0c1ff 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
+/* ── Shimmer Loading Bar ─────────────────────────────────────────────────── */
+@keyframes shimmer-bar {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer-bg {
+  background: linear-gradient(90deg, transparent, rgba(192, 193, 255, 0.05), transparent);
+  background-size: 200% 100%;
+  animation: shimmer-bar 3s infinite linear;
+}
+
+/* ── Input Focus Glow ────────────────────────────────────────────────────── */
+.input-glow:focus {
+  outline: none;
+  border-color: #c0c1ff;
+  box-shadow: 0 0 0 4px rgba(192, 193, 255, 0.12);
+}
+
+/* ── AI Glow ─────────────────────────────────────────────────────────────── */
+.ai-glow {
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.08);
+}
+
+.active-glow {
+  box-shadow: 0 0 20px rgba(192, 193, 255, 0.25);
 }
 
 /* ── Typography utilities ────────────────────────────────────────────────── */
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-display);
-  font-weight: 600;
+  font-family: var(--font-geist);
+  color: var(--color-on-surface);
   line-height: 1.3;
-  color: var(--color-ink);
 }
-
-a {
-  color: var(--color-accent);
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-a:hover { color: var(--color-accent-hover); }
 
 code, pre {
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
 
-pre {
-  background: var(--color-ink);
-  color: #E5E7EB;
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  overflow-x: auto;
-}
-
-/* ── Focus styles (keyboard accessibility) ──────────────────────────────── */
-:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-
-/* ── Scrollbar styling ───────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--color-paper-subtle); }
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: var(--radius-full);
-}
-::-webkit-scrollbar-thumb:hover { background: var(--color-ink-faint); }
-
-/* ── Utility classes ─────────────────────────────────────────────────────── */
+/* ── Utility ─────────────────────────────────────────────────────────────── */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -168,7 +315,17 @@ pre {
   border: 0;
 }
 
-/* Motion — honour user preference */
+/* ── Spin & Pulse ────────────────────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Motion preference ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
