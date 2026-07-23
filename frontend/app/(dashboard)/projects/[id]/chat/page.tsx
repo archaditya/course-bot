@@ -13,6 +13,7 @@ import {
   type Collection,
   type ChunkDetail,
   apiListCollections,
+  apiListConversations,
 } from "@/lib/api";
 import { Spinner, CitationMarker } from "@/design-system";
 
@@ -46,6 +47,23 @@ export default function ProjectChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'conversations' | 'sources'>('conversations');
+  const { data: conversationsData } = useQuery({
+    queryKey: ['conversations', projectId],
+    queryFn: () => apiListConversations(projectId),
+  });
+
+  const conversations = conversationsData?.items ?? [];
+
+  // Default tab fallback logic: if conversations exist, default to 'conversations', else 'sources'
+  useEffect(() => {
+    if (conversations?.length) {
+      setActiveSidebarTab('conversations');
+    } else {
+      setActiveSidebarTab('sources');
+    }
+  }, [conversationsData]);
 
   // Poll courses list every 3s if any course is still processing
   const { data: coursesData } = useQuery({
@@ -205,185 +223,98 @@ export default function ProjectChatPage() {
         position: "relative",
       }}
     >
-      <aside
-        style={{
-          width: "280px",
-          flexShrink: 0,
-          borderRight: "1px solid rgba(155, 155, 255, 0.18)",
-          display: "flex",
-          flexDirection: "column",
-          background: "rgba(10, 18, 38, 0.55)",
-        }}
-      >
-        <div
-          style={{
-            padding: "18px 18px 14px",
-            borderBottom: "1px solid rgba(155, 155, 255, 0.14)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => router.push(`/projects/${projectId}`)}
-            style={{
-              border: 0,
-              background: "transparent",
-              color: "var(--color-primary)",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: 0,
-              fontSize: "12px",
-              fontWeight: 600,
-              marginBottom: "16px",
-            }}
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontSize: "17px" }}
-            >
-              arrow_back
-            </span>
+      <aside style={{ width: "280px", flexShrink: 0, borderRight: "1px solid rgba(155, 155, 255, 0.18)", display: "flex", flexDirection: "column", background: "rgba(10, 18, 38, 0.55)" }}>
+        <div style={{ padding: "16px", borderBottom: "1px solid rgba(155, 155, 255, 0.14)" }}>
+          <button type="button" onClick={() => router.push(`/projects/${projectId}`)} style={{ border: 0, background: "transparent", color: "var(--color-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, marginBottom: "14px" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: "17px" }}>arrow_back</span>
             Back to project
           </button>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: "15px",
-                  fontWeight: 700,
-                  color: "var(--color-on-surface)",
-                }}
-              >
-                Indexed sources
-              </h2>
-              <p
-                style={{
-                  margin: "4px 0 0",
-                  fontSize: "11px",
-                  color: "var(--color-on-surface-variant)",
-                }}
-              >
-                Ready to use in chat
-              </p>
-            </div>
-
-            <span
+          {/* TABS HEADER */}
+          <div style={{ display: "flex", background: "rgba(155, 155, 255, 0.08)", borderRadius: "8px", padding: "3px", gap: "2px" }}>
+            <button
+              type="button"
+              onClick={() => setActiveSidebarTab('conversations')}
               style={{
-                fontSize: "11px",
-                color: "var(--color-secondary)",
-                fontWeight: 700,
+                flex: 1, padding: "6px 8px", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600,
+                background: activeSidebarTab === 'conversations' ? "var(--color-primary)" : "transparent",
+                color: activeSidebarTab === 'conversations' ? "#fff" : "var(--color-on-surface-variant)",
+                transition: "all 0.2s ease",
               }}
             >
-              {indexedCollections.length}
-            </span>
+              Chats ({conversations?.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSidebarTab('sources')}
+              style={{
+                flex: 1, padding: "6px 8px", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600,
+                background: activeSidebarTab === 'sources' ? "var(--color-primary)" : "transparent",
+                color: activeSidebarTab === 'sources' ? "#fff" : "var(--color-on-surface-variant)",
+                transition: "all 0.2s ease",
+              }}
+            >
+              Sources ({indexedCollections.length})
+            </button>
           </div>
         </div>
-
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "12px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-          }}
-        >
-          {indexedCollections.length === 0 ? (
-            <div
-              style={{
-                padding: "18px 10px",
-                textAlign: "center",
-                color: "var(--color-on-surface-variant)",
-                fontSize: "12px",
-                lineHeight: 1.6,
-              }}
-            >
-              No indexed sources yet.
-              <br />
-              Add and index materials from the project page.
-            </div>
-          ) : (
-            indexedCollections.map((collection) => {
-              const isSelected = collection.id === selectedCollectionId;
-
-              return (
-                <button
-                  key={collection.id}
-                  type="button"
-                  onClick={() => setSelectedCollectionId(collection.id)}
-                  style={{
-                    width: "100%",
-                    border: `1px solid ${isSelected
-                        ? "var(--color-primary)"
-                        : "rgba(155, 155, 255, 0.18)"
-                      }`,
-                    background: isSelected
-                      ? "rgba(140, 136, 255, 0.12)"
-                      : "transparent",
-                    borderRadius: "10px",
-                    padding: "12px",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    color: "var(--color-on-surface)",
-                  }}
-                >
-                  <div
+        {/* TAB CONTENT BODY */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {activeSidebarTab === 'conversations' ? (
+            conversations.length === 0 ? (
+              <p style={{ textAlign: "center", color: "var(--color-on-surface-variant)", fontSize: "12px", padding: "20px 10px" }}>
+                No past chats found.
+              </p>
+            ) : (
+              conversations.map((conv) => {
+                const isSelected = conv.id === conversationId;
+                return (
+                  <button
+                    key={conv.id}
+                    type="button"
+                    onClick={() => setConversationId(conv.id)}
                     style={{
-                      display: "flex",
-                      gap: "9px",
-                      alignItems: "center",
+                      width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${isSelected ? "var(--color-primary)" : "rgba(155, 155, 255, 0.14)"}`,
+                      background: isSelected ? "rgba(140, 136, 255, 0.15)" : "transparent", color: "var(--color-on-surface)", textAlign: "left", cursor: "pointer"
                     }}
                   >
-                    <span
-                      className="material-symbols-outlined"
-                      style={{
-                        color: "var(--color-primary)",
-                        fontSize: "18px",
-                      }}
-                    >
-                      description
-                    </span>
-
-                    <div style={{ minWidth: 0 }}>
-                      <p
-                        style={{
-                          margin: 0,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          fontSize: "13px",
-                          fontWeight: 650,
-                        }}
-                      >
-                        {collection.title}
-                      </p>
-
-                      <p
-                        style={{
-                          margin: "4px 0 0",
-                          color: "var(--color-secondary)",
-                          fontSize: "10px",
-                          fontWeight: 700,
-                          letterSpacing: "0.05em",
-                        }}
-                      >
-                        INDEXED
-                      </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: "16px", color: "var(--color-primary)" }}>chat</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {conv.title || "Chat Session"}
+                      </span>
                     </div>
-                  </div>
-                </button>
-              );
-            })
+                  </button>
+                );
+              })
+            )
+          ) : (
+            indexedCollections.length === 0 ? (
+              <p style={{ textAlign: "center", color: "var(--color-on-surface-variant)", fontSize: "12px", padding: "20px 10px" }}>
+                No indexed sources found.
+              </p>
+            ) : (
+              indexedCollections.map((collection) => {
+                const isSelected = collection.id === selectedCollectionId;
+                return (
+                  <button
+                    key={collection.id}
+                    type="button"
+                    onClick={() => setSelectedCollectionId(collection.id)}
+                    style={{
+                      width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${isSelected ? "var(--color-primary)" : "rgba(155, 155, 255, 0.14)"}`,
+                      background: isSelected ? "rgba(140, 136, 255, 0.15)" : "transparent", color: "var(--color-on-surface)", textAlign: "left", cursor: "pointer"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: "16px", color: "var(--color-primary)" }}>description</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {collection.title}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )
           )}
         </div>
       </aside>

@@ -82,11 +82,10 @@ type DocumentRepository interface {
 }
 
 type ChunkRepository interface {
-	// CreateBatch writes chunk rows; called by a Worker only — see
-	// docs/07-storage.md#write-ownership. Never called from the AI Service.
 	CreateBatch(ctx context.Context, chunks []*entities.Chunk) error
 	ListByDocument(ctx context.Context, documentID string) ([]*entities.Chunk, error)
 	GetByIDs(ctx context.Context, ids []string) ([]*entities.Chunk, error)
+	GetByID(ctx context.Context, id string) (*entities.Chunk, error)
 }
 
 type ConversationRepository interface {

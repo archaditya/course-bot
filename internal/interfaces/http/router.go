@@ -83,6 +83,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	top.Handle("/collections/", auth(protected))
 	top.Handle("/conversations", auth(protected))
 	top.Handle("/conversations/", auth(protected))
+	top.Handle("/chunks/", auth(protected))
 
 	// Recovery wraps the entire handler tree — a panic anywhere returns 500
 	// instead of crashing the process.

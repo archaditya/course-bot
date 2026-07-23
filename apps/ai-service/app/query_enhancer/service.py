@@ -47,12 +47,27 @@ class QueryEnhancerService:
             max_tokens=500,
             prompt_version=prompt_version,
         )
-
-        response = await self.provider.generate(prompt)
-        parsed = json.loads(response.text)
-
-        return QueryEnhancementResult(
-            step_back=parsed["step_back"],
-            rewritten=parsed["rewritten"],
-            sub_queries=parsed["sub_queries"][:3],  # cap at 3
-        )
+        try:
+            response = await self.provider.generate(prompt)
+            raw_text = response.text.strip()
+            # Clean markdown code blocks if present
+            if raw_text.startswith("```"):
+                lines = raw_text.splitlines()
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                raw_text = "\n".join(lines).strip()
+            parsed = json.loads(raw_text)
+            return QueryEnhancementResult(
+                step_back=parsed.get("step_back", query),
+                rewritten=parsed.get("rewritten", query),
+                sub_queries=parsed.get("sub_queries", [query])[:3],
+            )
+        except Exception:
+            # Fallback gracefully to original query on any LLM JSON parse issue
+            return QueryEnhancementResult(
+                step_back=query,
+                rewritten=query,
+                sub_queries=[query],
+            )

@@ -8,9 +8,6 @@ import (
 	"archadilm/internal/application/chat"
 )
 
-// ChatHandler handles conversation and message endpoints. Streaming responses
-// use Server-Sent Events (SSE) — the frontend reads via EventSource.
-// See docs/10-api-contracts.md#chat.
 type ChatHandler struct {
 	svc *chat.Service
 }
@@ -21,7 +18,9 @@ func NewChatHandler(svc *chat.Service) *ChatHandler {
 
 func (h *ChatHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /conversations", h.createConversation)
+	mux.HandleFunc("GET /projects/{id}/conversations", h.listConversations)
 	mux.HandleFunc("POST /conversations/{id}/messages", h.sendMessage)
+	mux.HandleFunc("GET /chunks/{id}", h.getChunk)
 }
 
 type createConversationRequest struct {
@@ -127,4 +126,43 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "data: [DONE]\n\n")
 	flusher.Flush()
+}
+
+
+func (h *ChatHandler) listConversations(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+	projectID := r.PathValue("id")
+	convs, _, err := h.svc.ListConversations(r.Context(), claims.WorkspaceID, projectID)
+	if err != nil {
+		notFoundOrInternal(w, err, "PROJECT_NOT_FOUND", "Project not found.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": convs})
+}
+
+func (h *ChatHandler) getChunk(w http.ResponseWriter, r *http.Request) {
+	_, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+	chunkID := r.PathValue("id")
+	chunk, err := h.svc.GetChunk(r.Context(), chunkID)
+	if err != nil {
+		notFoundOrInternal(w, err, "CHUNK_NOT_FOUND", "Chunk not found.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":              chunk.ID,
+		"document_id":     chunk.DocumentID,
+		"content":         chunk.Content,
+		"title":           chunk.Title,
+		"start_timestamp": chunk.StartTimestamp,
+		"end_timestamp":   chunk.EndTimestamp,
+		"page_number":     chunk.PageNumber,
+	})
 }

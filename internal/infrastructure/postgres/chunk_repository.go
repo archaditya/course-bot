@@ -16,8 +16,6 @@ func NewChunkRepository(db *sql.DB) repository.ChunkRepository {
 	return &chunkRepository{db: db}
 }
 
-// CreateBatch inserts chunk rows in a single transaction. Called by the
-// Embedding Worker only — see docs/07-storage.md#write-ownership.
 func (r *chunkRepository) CreateBatch(ctx context.Context, chunks []*entities.Chunk) error {
 	if len(chunks) == 0 {
 		return nil
@@ -81,6 +79,17 @@ func (r *chunkRepository) GetByIDs(ctx context.Context, ids []string) ([]*entiti
 	}
 	defer rows.Close()
 	return scanChunks(rows)
+}
+
+func (r *chunkRepository) GetByID(ctx context.Context, id string) (*entities.Chunk, error) {
+	chunks, err := r.GetByIDs(ctx, []string{id})
+	if err != nil {
+		return nil, err
+	}
+	if len(chunks) == 0 {
+		return nil, repository.ErrNotFound
+	}
+	return chunks[0], nil
 }
 
 func scanChunks(rows *sql.Rows) ([]*entities.Chunk, error) {

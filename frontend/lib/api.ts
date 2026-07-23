@@ -61,3 +61,6 @@ function toApiError(status: number, payload: string) { try { const data = JSON.p
 export function getToken(): string | null { return typeof window === 'undefined' ? null : localStorage.getItem('access_token'); }
 export function setTokens(tokens: Pick<AuthTokens, 'access_token' | 'refresh_token'>): void { localStorage.setItem('access_token', tokens.access_token); localStorage.setItem('refresh_token', tokens.refresh_token); }
 export function clearTokens(): void { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); }
+export async function apiListConversations(projectId: string): Promise<{ items: Conversation[] }> {
+	return request(`/projects/${projectId}/conversations`, { auth: true });
+}
