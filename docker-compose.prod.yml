@@ -112,6 +112,8 @@ services:
     build:
       context: .
       dockerfile: build/docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     container_name: course-bot-frontend
     restart: always
     environment:
