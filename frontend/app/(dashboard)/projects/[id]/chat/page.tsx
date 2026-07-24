@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   apiCreateConversation,
   apiGetChunk,
+  apiGetConversationMessages,
   getToken,
   type Collection,
   type ChunkDetail,
@@ -46,7 +47,32 @@ export default function ProjectChatPage() {
   const [inputQuery, setInputQuery] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Switching to a past conversation used to just swap the id while leaving
+  // whatever messages were already on screen — this actually loads that
+  // conversation's history.
+  const openConversation = useCallback(async (id: string) => {
+    setConversationId(id);
+    setMessages([]);
+    setLoadingHistory(true);
+    try {
+      const res = await apiGetConversationMessages(id);
+      setMessages(res.items as Message[]);
+    } catch {
+      // History couldn't be loaded (e.g. endpoint mismatch) — leave the
+      // thread empty rather than showing stale messages from another chat.
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  const startNewConversation = useCallback(() => {
+    setConversationId(null);
+    setMessages([]);
+    setStreamingContent("");
+  }, []);
 
   const [activeSidebarTab, setActiveSidebarTab] = useState<'conversations' | 'sources'>('conversations');
   const { data: conversationsData } = useQuery({
@@ -114,6 +140,7 @@ export default function ProjectChatPage() {
       const conv = await apiCreateConversation(projectId);
       convId = conv.id;
       setConversationId(conv.id);
+      queryClient.invalidateQueries({ queryKey: ['conversations', projectId] });
     }
 
     const targetCollectionId = selectedCollectionId;
@@ -209,6 +236,7 @@ export default function ProjectChatPage() {
     conversationId,
     projectId,
     selectedCollectionId,
+    queryClient,
     coursesData,
   ]);
 
@@ -228,6 +256,29 @@ export default function ProjectChatPage() {
           <button type="button" onClick={() => router.push(`/projects/${projectId}`)} style={{ border: 0, background: "transparent", color: "var(--color-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, marginBottom: "14px" }}>
             <span className="material-symbols-outlined" style={{ fontSize: "17px" }}>arrow_back</span>
             Back to project
+          </button>
+          <button
+            type="button"
+            onClick={startNewConversation}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px",
+              padding: "9px 12px",
+              marginBottom: "10px",
+              borderRadius: "8px",
+              border: "1px solid var(--color-primary)",
+              background: "rgba(140, 136, 255, 0.1)",
+              color: "var(--color-primary)",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>add</span>
+            New chat
           </button>
           {/* TABS HEADER */}
           <div style={{ display: "flex", background: "rgba(155, 155, 255, 0.08)", borderRadius: "8px", padding: "3px", gap: "2px" }}>
@@ -271,7 +322,9 @@ export default function ProjectChatPage() {
                   <button
                     key={conv.id}
                     type="button"
-                    onClick={() => setConversationId(conv.id)}
+                    onClick={() => {
+                      if (conv.id !== conversationId) openConversation(conv.id);
+                    }}
                     style={{
                       width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${isSelected ? "var(--color-primary)" : "rgba(155, 155, 255, 0.14)"}`,
                       background: isSelected ? "rgba(140, 136, 255, 0.15)" : "transparent", color: "var(--color-on-surface)", textAlign: "left", cursor: "pointer"
@@ -376,7 +429,13 @@ export default function ProjectChatPage() {
             paddingBottom: "120px",
           }}
         >
-          {messages.length === 0 && !isStreaming && (
+          {loadingHistory && (
+            <div style={{ margin: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+              <Spinner size={24} color="var(--color-primary)" />
+              <span style={{ fontSize: "12px", color: "var(--color-on-surface-variant)" }}>Loading conversation…</span>
+            </div>
+          )}
+          {!loadingHistory && messages.length === 0 && !isStreaming && (
             <div
               style={{ margin: "auto", textAlign: "center", maxWidth: "400px" }}
             >
@@ -650,82 +709,108 @@ export default function ProjectChatPage() {
         </div>
       </section>
 
-      {/* ── RIGHT PANE: Chunk Detail ──────────────────────────────── */}
+      {/* ── Citation drawer (overlay, not an in-flow column) ─────────── */}
+      {/* This used to be a permanent 320px flex sibling that, combined with
+          the 280px sidebar, crushed the main chat column. As a fixed overlay
+          it only takes space while a citation is actually open. */}
       <AnimatePresence>
         {selectedChunkId && (
-          <motion.aside
-            initial={{ x: 350, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 350, opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            style={{
-              width: "320px",
-              minWidth: "320px",
-              background: "var(--color-surface-dim)",
-              borderLeft: "1px solid var(--color-outline-variant)",
-              padding: "24px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-            }}
-          >
-            <div
+          <>
+            <motion.div
+              key="chunk-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedChunkId(null)}
               style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.35)",
+                zIndex: 90,
+              }}
+            />
+            <motion.aside
+              key="chunk-drawer"
+              initial={{ x: 360, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 360, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              style={{
+                position: "fixed",
+                top: 0,
+                right: 0,
+                height: "100vh",
+                width: "360px",
+                maxWidth: "90vw",
+                background: "var(--color-surface-dim)",
+                borderLeft: "1px solid var(--color-outline-variant)",
+                padding: "24px",
                 display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
+                flexDirection: "column",
+                gap: "16px",
+                zIndex: 91,
+                boxShadow: "-8px 0 30px rgba(0,0,0,0.35)",
+                overflowY: "auto",
               }}
             >
-              <h3
+              <div
                 style={{
-                  fontFamily: "var(--font-geist)",
-                  fontSize: "16px",
-                  margin: 0,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
                 }}
               >
-                Source Chunk
-              </h3>
-              <button
-                onClick={() => setSelectedChunkId(null)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "var(--color-on-surface-variant)",
-                  cursor: "pointer",
-                }}
-              >
-                ✕
-              </button>
-            </div>
-            {loadingChunk ? (
-              <Spinner size={24} color="var(--color-primary)" />
-            ) : selectedChunk ? (
-              <div>
-                <h4
+                <h3
                   style={{
                     fontFamily: "var(--font-geist)",
-                    fontSize: "14px",
-                    marginBottom: "8px",
-                    color: "var(--color-primary)",
+                    fontSize: "16px",
+                    margin: 0,
                   }}
                 >
-                  {selectedChunk.title || "Source Citation"}
-                </h4>
-                <p
+                  Source Chunk
+                </h3>
+                <button
+                  onClick={() => setSelectedChunkId(null)}
                   style={{
-                    fontSize: "13px",
-                    lineHeight: 1.6,
-                    background: "rgba(45,52,73,0.3)",
-                    padding: "12px",
-                    borderRadius: "8px",
+                    background: "none",
+                    border: "none",
                     color: "var(--color-on-surface-variant)",
+                    cursor: "pointer",
                   }}
                 >
-                  {selectedChunk.content}
-                </p>
+                  ✕
+                </button>
               </div>
-            ) : null}
-          </motion.aside>
+              {loadingChunk ? (
+                <Spinner size={24} color="var(--color-primary)" />
+              ) : selectedChunk ? (
+                <div>
+                  <h4
+                    style={{
+                      fontFamily: "var(--font-geist)",
+                      fontSize: "14px",
+                      marginBottom: "8px",
+                      color: "var(--color-primary)",
+                    }}
+                  >
+                    {selectedChunk.title || "Source Citation"}
+                  </h4>
+                  <p
+                    style={{
+                      fontSize: "13px",
+                      lineHeight: 1.6,
+                      background: "rgba(45,52,73,0.3)",
+                      padding: "12px",
+                      borderRadius: "8px",
+                      color: "var(--color-on-surface-variant)",
+                    }}
+                  >
+                    {selectedChunk.content}
+                  </p>
+                </div>
+              ) : null}
+            </motion.aside>
+          </>
         )}
       </AnimatePresence>
     </div>
