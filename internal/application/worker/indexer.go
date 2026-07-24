@@ -24,20 +24,20 @@ type IndexerWorker struct {
 }
 
 func NewIndexerWorker(
-    courses repository.CourseRepository,
-    jobs repository.JobRepository,
-    chunks repository.ChunkRepository,
-    vectors provider.VectorStore,
-    queue provider.Queue,
-    ids provider.IDGenerator,
-    aiClient *llm.Client,
+	courses repository.CourseRepository,
+	jobs repository.JobRepository,
+	chunks repository.ChunkRepository,
+	vectors provider.VectorStore,
+	queue provider.Queue,
+	ids provider.IDGenerator,
+	aiClient *llm.Client,
 ) *IndexerWorker {
-    return &IndexerWorker{
-        base:     base{courses: courses, jobs: jobs, queue: queue, ids: ids},  // ADD ids
-        chunks:   chunks,
-        vectors:  vectors,
-        aiClient: aiClient,
-    }
+	return &IndexerWorker{
+		base:     base{courses: courses, jobs: jobs, queue: queue, ids: ids}, // ADD ids
+		chunks:   chunks,
+		vectors:  vectors,
+		aiClient: aiClient,
+	}
 }
 
 func (w *IndexerWorker) Run(ctx context.Context) error {
@@ -50,7 +50,7 @@ func (w *IndexerWorker) Run(ctx context.Context) error {
 		return fmt.Errorf("indexer: consume: %w", err)
 	}
 	log.Println("indexer worker: listening on", stream)
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -73,13 +73,13 @@ func (w *IndexerWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 	courseID, _ := qe.Payload["course_id"].(string)
 	chunksJSON, _ := qe.Payload["chunks"].(string)
 	jobID, _ := qe.Payload["job_id"].(string)
-	
+
 	job, err := w.jobs.GetByID(ctx, jobID)
 	if err != nil {
 		log.Printf("indexer: get job %s: %v", jobID, err)
 		return
 	}
-	
+
 	for attempt := 1; attempt <= job.MaxAttempts; attempt++ {
 		if err := w.startJob(ctx, job); err != nil {
 			log.Printf("indexer: start job: %v", err)
@@ -111,21 +111,21 @@ func (w *IndexerWorker) process(ctx context.Context, courseID, chunksJSON, trace
 	if err := json.Unmarshal([]byte(chunksJSON), &chunks); err != nil {
 		return fmt.Errorf("indexer: unmarshal: %w", err)
 	}
-	
+
 	// Step 1: Add metadata (local, no AI call)
 	metadataStart := time.Now()
 	for i := range chunks {
 		chunks[i].Title, chunks[i].Summary = localMetadata(chunks[i].Content)
 	}
 	observability.RecordProcessingTime("metadata", time.Since(metadataStart))
-	
+
 	// Step 2: Batch embeddings
 	embeddingStart := time.Now()
 	texts := make([]string, len(chunks))
 	for i, c := range chunks {
 		texts[i] = c.Content
 	}
-	
+
 	vecs, err := w.aiClient.Embed(ctx, texts)
 	if err != nil {
 		observability.RecordError("embedding")
@@ -136,7 +136,7 @@ func (w *IndexerWorker) process(ctx context.Context, courseID, chunksJSON, trace
 		return fmt.Errorf("indexer: expected %d vectors, got %d", len(chunks), len(vecs))
 	}
 	observability.RecordProcessingTime("embedding", time.Since(embeddingStart))
-	
+
 	// Step 3: Build Qdrant points
 	points := make([]provider.VectorPoint, len(chunks))
 	for i, c := range chunks {
@@ -148,12 +148,12 @@ func (w *IndexerWorker) process(ctx context.Context, courseID, chunksJSON, trace
 		}
 		chunks[i].VectorRef = c.ID
 	}
-	
+
 	// Step 4: Upsert to Qdrant
 	if err := w.vectors.Upsert(ctx, points); err != nil {
 		return fmt.Errorf("indexer: upsert qdrant: %w", err)
 	}
-	
+
 	// Step 5: Write chunks to Postgres
 	chunkPtrs := make([]*entities.Chunk, len(chunks))
 	for i := range chunks {
@@ -162,7 +162,7 @@ func (w *IndexerWorker) process(ctx context.Context, courseID, chunksJSON, trace
 	if err := w.chunks.CreateBatch(ctx, chunkPtrs); err != nil {
 		return fmt.Errorf("indexer: write chunks to postgres: %w", err)
 	}
-	
+
 	return nil
 }
 

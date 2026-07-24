@@ -38,7 +38,12 @@ func (r *citationRepository) CreateBatch(ctx context.Context, citations []*entit
 }
 
 func (r *citationRepository) ListByMessage(ctx context.Context, messageID string) ([]*entities.Citation, error) {
-	const q = `SELECT id, message_id, chunk_id, start_timestamp, page_number FROM citations WHERE message_id=$1`
+	const q = `
+		SELECT c.id, c.message_id, c.chunk_id, c.start_timestamp, c.page_number,
+		       ch.document_id, ch.title
+		FROM citations c
+		JOIN chunks ch ON ch.id = c.chunk_id
+		WHERE c.message_id = $1`
 	rows, err := r.db.QueryContext(ctx, q, messageID)
 	if err != nil {
 		return nil, fmt.Errorf("citation: list: %w", err)
@@ -48,14 +53,16 @@ func (r *citationRepository) ListByMessage(ctx context.Context, messageID string
 	for rows.Next() {
 		var c entities.Citation
 		var startTS, pageNum sql.NullInt64
-		if err := rows.Scan(&c.ID, &c.MessageID, &c.ChunkID, &startTS, &pageNum); err != nil {
+		if err := rows.Scan(&c.ID, &c.MessageID, &c.ChunkID, &startTS, &pageNum, &c.DocumentID, &c.Title); err != nil {
 			return nil, err
 		}
 		if startTS.Valid {
-			v := int(startTS.Int64); c.StartTimestamp = &v
+			v := int(startTS.Int64)
+			c.StartTimestamp = &v
 		}
 		if pageNum.Valid {
-			v := int(pageNum.Int64); c.PageNumber = &v
+			v := int(pageNum.Int64)
+			c.PageNumber = &v
 		}
 		citations = append(citations, &c)
 	}

@@ -1,16 +1,16 @@
 package http
 
 import (
-    "context"
-    "database/sql"
-    "encoding/json"
-    "fmt"
-    "log"
-    "net/http"
-    "time"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
 
-    "archadilm/internal/infrastructure/llm"
-    "archadilm/internal/infrastructure/observability"
+	"archadilm/internal/infrastructure/llm"
+	"archadilm/internal/infrastructure/observability"
 )
 
 // pinger is satisfied by any dependency that can report its own liveness —
@@ -57,80 +57,79 @@ type Dependencies struct {
 	ChatHandler    *ChatHandler
 	StatusHandler  *StatusHandler
 
-	RedisClient  pinger      // *redis.Queue (infrastructure/redis)
+	RedisClient  pinger // *redis.Queue (infrastructure/redis)
 	PostgresDB   *sql.DB
-	QdrantClient pinger      // *qdrant.Store (infrastructure/qdrant)
+	QdrantClient pinger // *qdrant.Store (infrastructure/qdrant)
 	AIClient     *llm.Client
 }
 
 func SecurityHeaders(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // Security headers
-        w.Header().Set("X-Content-Type-Options", "nosniff")
-        w.Header().Set("X-Frame-Options", "DENY")
-        w.Header().Set("X-XSS-Protection", "1; mode=block")
-        w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-        w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';")
-        w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-        w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-        
-        next.ServeHTTP(w, r)
-    })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Security headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
-    metrics := map[string]interface{}{
-        "parser_processing_time_ns":    observability.GlobalMetrics.ParserProcessingTime.Load(),
-        "chunker_processing_time_ns":   observability.GlobalMetrics.ChunkerProcessingTime.Load(),
-        "metadata_processing_time_ns":  observability.GlobalMetrics.MetadataProcessingTime.Load(),
-        "embedding_processing_time_ns": observability.GlobalMetrics.EmbeddingProcessingTime.Load(),
-        "parser_errors":                observability.GlobalMetrics.ParserErrors.Load(),
-        "chunker_errors":               observability.GlobalMetrics.ChunkerErrors.Load(),
-        "metadata_errors":              observability.GlobalMetrics.MetadataErrors.Load(),
-        "embedding_errors":             observability.GlobalMetrics.EmbeddingErrors.Load(),
-        "ai_service_latency_ns":        observability.GlobalMetrics.AIServiceLatency.Load(),
-        "ai_service_errors":            observability.GlobalMetrics.AIServiceErrors.Load(),
-        "ai_service_calls":             observability.GlobalMetrics.AIServiceCalls.Load(),
-    }
-    
-    writeJSON(w, http.StatusOK, metrics)
+	metrics := map[string]interface{}{
+		"parser_processing_time_ns":    observability.GlobalMetrics.ParserProcessingTime.Load(),
+		"chunker_processing_time_ns":   observability.GlobalMetrics.ChunkerProcessingTime.Load(),
+		"metadata_processing_time_ns":  observability.GlobalMetrics.MetadataProcessingTime.Load(),
+		"embedding_processing_time_ns": observability.GlobalMetrics.EmbeddingProcessingTime.Load(),
+		"parser_errors":                observability.GlobalMetrics.ParserErrors.Load(),
+		"chunker_errors":               observability.GlobalMetrics.ChunkerErrors.Load(),
+		"metadata_errors":              observability.GlobalMetrics.MetadataErrors.Load(),
+		"embedding_errors":             observability.GlobalMetrics.EmbeddingErrors.Load(),
+		"ai_service_latency_ns":        observability.GlobalMetrics.AIServiceLatency.Load(),
+		"ai_service_errors":            observability.GlobalMetrics.AIServiceErrors.Load(),
+		"ai_service_calls":             observability.GlobalMetrics.AIServiceCalls.Load(),
+	}
+
+	writeJSON(w, http.StatusOK, metrics)
 }
 
 func NewRouter(deps Dependencies) http.Handler {
-    rateLimiter := NewRateLimiter(60, 10)
- 
-    public := http.NewServeMux()
-    public.HandleFunc("GET /healthz", handleHealthz(deps))
-    public.HandleFunc("GET /metrics", handleMetrics)
-    
- 
-    deps.AuthHandler.Register(public)
- 
-    protected := http.NewServeMux()
-    deps.ProjectHandler.Register(protected)
-    deps.CourseHandler.Register(protected)
-    deps.UploadHandler.Register(protected)
-    deps.ChatHandler.Register(protected)
-    deps.StatusHandler.Register(protected)
-    protected.HandleFunc("GET /auth/me", deps.AuthHandler.me)
- 
-    top := http.NewServeMux()
-    top.Handle("/", public)
- 
-    // Protected route prefixes — All require valid Bearer token + rate limit
-    auth := RequireAuth(deps.JWTSigningKey)
-    rateLimited := RateLimitMiddleware(rateLimiter)
-    
-    top.Handle("/auth/me", auth(protected))
-    top.Handle("/projects", auth(rateLimited(protected)))  // ADD rateLimited
-    top.Handle("/projects/", auth(rateLimited(protected)))  // ADD rateLimited
-    top.Handle("/courses/", auth(rateLimited(protected)))  // ADD rateLimited
-    top.Handle("/collections/", auth(rateLimited(protected)))  // ADD rateLimited
-    top.Handle("/conversations", auth(rateLimited(protected)))  // ADD rateLimited
-    top.Handle("/conversations/", auth(rateLimited(protected)))  // ADD rateLimited
-    top.Handle("/chunks/", auth(rateLimited(protected)))  // ADD rateLimited
- 
-    return Recovery(SecurityHeaders(CORS(Logging(top))))
+	rateLimiter := NewRateLimiter(60, 10)
+
+	public := http.NewServeMux()
+	public.HandleFunc("GET /healthz", handleHealthz(deps))
+	public.HandleFunc("GET /metrics", handleMetrics)
+
+	deps.AuthHandler.Register(public)
+
+	protected := http.NewServeMux()
+	deps.ProjectHandler.Register(protected)
+	deps.CourseHandler.Register(protected)
+	deps.UploadHandler.Register(protected)
+	deps.ChatHandler.Register(protected)
+	deps.StatusHandler.Register(protected)
+	protected.HandleFunc("GET /auth/me", deps.AuthHandler.me)
+
+	top := http.NewServeMux()
+	top.Handle("/", public)
+
+	// Protected route prefixes — All require valid Bearer token + rate limit
+	auth := RequireAuth(deps.JWTSigningKey)
+	rateLimited := RateLimitMiddleware(rateLimiter)
+
+	top.Handle("/auth/me", auth(protected))
+	top.Handle("/projects", auth(rateLimited(protected)))       // ADD rateLimited
+	top.Handle("/projects/", auth(rateLimited(protected)))      // ADD rateLimited
+	top.Handle("/courses/", auth(rateLimited(protected)))       // ADD rateLimited
+	top.Handle("/collections/", auth(rateLimited(protected)))   // ADD rateLimited
+	top.Handle("/conversations", auth(rateLimited(protected)))  // ADD rateLimited
+	top.Handle("/conversations/", auth(rateLimited(protected))) // ADD rateLimited
+	top.Handle("/chunks/", auth(rateLimited(protected)))        // ADD rateLimited
+
+	return Recovery(SecurityHeaders(CORS(Logging(top))))
 }
 
 // CORS middleware for frontend development.
@@ -162,71 +161,71 @@ func Logging(next http.Handler) http.Handler {
 
 // handleHealthz checks all critical dependencies and returns aggregated status
 func handleHealthz(deps Dependencies) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-        defer cancel()
-        
-        checks := []struct {
-            name  string
-            check func(context.Context) error
-        }{
-            {
-                name: "redis",
-                check: func(ctx context.Context) error {
-                    if deps.RedisClient == nil {
-                        return fmt.Errorf("redis client not configured")
-                    }
-                    return deps.RedisClient.Ping(ctx)
-                },
-            },
-            {
-                name: "postgres",
-                check: func(ctx context.Context) error {
-                    if deps.PostgresDB == nil {
-                        return fmt.Errorf("postgres not configured")
-                    }
-                    return deps.PostgresDB.PingContext(ctx)
-                },
-            },
-            {
-                name: "qdrant",
-                check: func(ctx context.Context) error {
-                    if deps.QdrantClient == nil {
-                        return fmt.Errorf("qdrant not configured")
-                    }
-                    return deps.QdrantClient.Ping(ctx)
-                },
-            },
-            {
-                name: "ai-service",
-                check: func(ctx context.Context) error {
-                    if deps.AIClient == nil {
-                        return fmt.Errorf("ai service client not configured")
-                    }
-                    // Check if any of the client's circuit breakers are open
-                    if !deps.AIClient.Healthy() {
-                        return fmt.Errorf("circuit breaker open")
-                    }
-                    return nil
-                },
-            },
-        }
-        
-        var unhealthy []string
-        for _, c := range checks {
-            if err := c.check(ctx); err != nil {
-                unhealthy = append(unhealthy, c.name)
-            }
-        }
-        
-        if len(unhealthy) > 0 {
-            writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-                "status":   "unhealthy",
-                "unhealthy": unhealthy,
-            })
-            return
-        }
-        
-        writeJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
-    }
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		checks := []struct {
+			name  string
+			check func(context.Context) error
+		}{
+			{
+				name: "redis",
+				check: func(ctx context.Context) error {
+					if deps.RedisClient == nil {
+						return fmt.Errorf("redis client not configured")
+					}
+					return deps.RedisClient.Ping(ctx)
+				},
+			},
+			{
+				name: "postgres",
+				check: func(ctx context.Context) error {
+					if deps.PostgresDB == nil {
+						return fmt.Errorf("postgres not configured")
+					}
+					return deps.PostgresDB.PingContext(ctx)
+				},
+			},
+			{
+				name: "qdrant",
+				check: func(ctx context.Context) error {
+					if deps.QdrantClient == nil {
+						return fmt.Errorf("qdrant not configured")
+					}
+					return deps.QdrantClient.Ping(ctx)
+				},
+			},
+			{
+				name: "ai-service",
+				check: func(ctx context.Context) error {
+					if deps.AIClient == nil {
+						return fmt.Errorf("ai service client not configured")
+					}
+					// Check if any of the client's circuit breakers are open
+					if !deps.AIClient.Healthy() {
+						return fmt.Errorf("circuit breaker open")
+					}
+					return nil
+				},
+			},
+		}
+
+		var unhealthy []string
+		for _, c := range checks {
+			if err := c.check(ctx); err != nil {
+				unhealthy = append(unhealthy, c.name)
+			}
+		}
+
+		if len(unhealthy) > 0 {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"status":    "unhealthy",
+				"unhealthy": unhealthy,
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
+	}
 }

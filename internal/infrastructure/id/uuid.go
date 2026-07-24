@@ -18,7 +18,8 @@ type UUIDGenerator struct{}
 var _ provider.IDGenerator = UUIDGenerator{}
 
 // New returns a new random UUID v4 string formatted as:
-//   xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+//
+//	xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
 func (UUIDGenerator) New() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

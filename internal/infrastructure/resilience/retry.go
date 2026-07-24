@@ -7,7 +7,7 @@ import (
 )
 
 type RetryConfig struct {
-	MaxAttempts int
+	MaxAttempts  int
 	InitialDelay time.Duration
 	MaxDelay     time.Duration
 	Multiplier   float64
@@ -15,7 +15,7 @@ type RetryConfig struct {
 
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
-		MaxAttempts: 5,
+		MaxAttempts:  5,
 		InitialDelay: 1 * time.Second,
 		MaxDelay:     30 * time.Second,
 		Multiplier:   2.0,
@@ -33,7 +33,7 @@ func RetryWithContext(ctx context.Context, config RetryConfig, fn func() error) 
 		}
 
 		lastErr = err
-		
+
 		if attempt < config.MaxAttempts {
 			select {
 			case <-ctx.Done():

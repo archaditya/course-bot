@@ -14,14 +14,14 @@ import (
 const dlqStream = "pipeline:dlq"
 
 type DLQEntry struct {
-	OriginalStream string                 `json:"original_stream"`
-	OriginalEvent  provider.Event         `json:"original_event"`
-	FailedAt       time.Time             `json:"failed_at"`
-	Stage          string                `json:"stage"`
-	Error          string                `json:"error"`
-	JobID          string                `json:"job_id"`
-	CourseID       string                `json:"course_id"`
-	RetryCount     int                   `json:"retry_count"`
+	OriginalStream string         `json:"original_stream"`
+	OriginalEvent  provider.Event `json:"original_event"`
+	FailedAt       time.Time      `json:"failed_at"`
+	Stage          string         `json:"stage"`
+	Error          string         `json:"error"`
+	JobID          string         `json:"job_id"`
+	CourseID       string         `json:"course_id"`
+	RetryCount     int            `json:"retry_count"`
 }
 
 func SendToDLQ(ctx context.Context, queue provider.Queue, originalStream string, event provider.Event, stage, jobID, courseID string, err error) error {
@@ -35,18 +35,18 @@ func SendToDLQ(ctx context.Context, queue provider.Queue, originalStream string,
 		CourseID:       courseID,
 		RetryCount:     0,
 	}
-	
+
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("dlq: marshal: %w", err)
 	}
-	
+
 	dlqEvent := provider.Event{
 		Name:    "JOB_FAILED",
 		Payload: map[string]any{"entry": string(data)},
 		TraceID: event.TraceID,
 	}
-	
+
 	return queue.Publish(ctx, dlqStream, dlqEvent)
 }
 

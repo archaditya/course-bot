@@ -26,6 +26,7 @@ export async function apiRenameCollection(id: string, title: string): Promise<Co
 export async function apiDeleteCollection(id: string): Promise<void> { return request(`/collections/${id}`, { method: 'DELETE', auth: true }); }
 export const apiCreateCourse = apiCreateCollection;
 export const apiListCourses = apiListCollections;
+export const apiGetProjectCourses = apiListCollections;
 export const apiGetCourse = apiGetCollection;
 export const apiRenameCourse = apiRenameCollection;
 export const apiDeleteCourse = apiDeleteCollection;
@@ -49,9 +50,6 @@ export interface ConversationMessage {
 	citations?: Array<{ chunk_id: string; document_id: string; start_timestamp?: number; title?: string }>;
 }
 export async function apiCreateConversation(projectId: string): Promise<Conversation> { return request('/conversations', { method: 'POST', body: { project_id: projectId }, auth: true }); }
-// NOTE: assumes the backend exposes GET /conversations/:id/messages next to the
-// existing POST /conversations/:id/messages (streaming) route. Confirm the exact
-// shape against the API before shipping — adjust the field names below if needed.
 export async function apiGetConversationMessages(conversationId: string): Promise<{ items: ConversationMessage[] }> {
 	return request(`/conversations/${conversationId}/messages`, { auth: true });
 }
@@ -75,4 +73,10 @@ export function setTokens(tokens: Pick<AuthTokens, 'access_token' | 'refresh_tok
 export function clearTokens(): void { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); }
 export async function apiListConversations(projectId: string): Promise<{ items: Conversation[] }> {
 	return request(`/projects/${projectId}/conversations`, { auth: true });
+}
+export async function apiDeleteConversation(id: string): Promise<void> {
+	return request(`/conversations/${id}`, { method: 'DELETE', auth: true });
+}
+export async function apiUpdateConversationTitle(id: string, title: string): Promise<void> {
+	return request(`/conversations/${id}`, { method: 'PATCH', body: { title }, auth: true });
 }

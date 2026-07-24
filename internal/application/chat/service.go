@@ -377,3 +377,27 @@ func (s *Service) ListConversations(ctx context.Context, ws repository.Workspace
 func (s *Service) GetChunk(ctx context.Context, id string) (*entities.Chunk, error) {
 	return s.chunks.GetByID(ctx, id)
 }
+
+func (s *Service) GetConversationMessages(ctx context.Context, conversationID string) ([]*entities.Message, string, error) {
+	msgs, next, err := s.messages.ListByConversation(ctx, conversationID, "", 100)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, m := range msgs {
+		if m.Role == entities.MessageRoleAssistant {
+			cits, err := s.citations.ListByMessage(ctx, m.ID)
+			if err == nil && len(cits) > 0 {
+				m.Citations = cits
+			}
+		}
+	}
+	return msgs, next, nil
+}
+
+func (s *Service) DeleteConversation(ctx context.Context, ws repository.WorkspaceID, id string) error {
+	return s.conversations.Delete(ctx, ws, id)
+}
+
+func (s *Service) UpdateConversationTitle(ctx context.Context, id string, title string) error {
+	return s.conversations.UpdateTitle(ctx, id, title)
+}

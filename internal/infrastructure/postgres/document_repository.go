@@ -89,7 +89,7 @@ func (r *documentRepository) SetNormalizedData(ctx context.Context, id string, d
 		SET normalized_data = $2, normalization_version = $3, updated_at = NOW()
 		WHERE id = $1
 	`
-	_, err := r.db.Exec(ctx, query, id, data, version)
+	_, err := r.db.ExecContext(ctx, query, id, data, version)
 	return err
 }
 
@@ -101,6 +101,6 @@ func (r *documentRepository) GetNormalizedData(ctx context.Context, id string) (
 	`
 	var data []byte
 	var version string
-	err := r.db.QueryRow(ctx, query, id).Scan(&data, &version)
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&data, &version)
 	return data, version, err
 }

@@ -21,6 +21,9 @@ func (h *ChatHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /projects/{id}/conversations", h.listConversations)
 	mux.HandleFunc("POST /conversations/{id}/messages", h.sendMessage)
 	mux.HandleFunc("GET /chunks/{id}", h.getChunk)
+	mux.HandleFunc("GET /conversations/{id}/messages", h.getConversationMessages)
+	mux.HandleFunc("DELETE /conversations/{id}", h.deleteConversation)
+	mux.HandleFunc("PATCH /conversations/{id}", h.updateConversationTitle)
 }
 
 type createConversationRequest struct {
@@ -55,6 +58,10 @@ func (h *ChatHandler) createConversation(w http.ResponseWriter, r *http.Request)
 type sendMessageRequest struct {
 	Content  string `json:"content"`
 	CourseID string `json:"course_id"`
+}
+
+type updateConversationTitleRequest struct {
+	Title string `json:"title"`
 }
 
 // sendMessage streams the AI response using SSE.
@@ -128,7 +135,6 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 }
 
-
 func (h *ChatHandler) listConversations(w http.ResponseWriter, r *http.Request) {
 	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
@@ -159,10 +165,62 @@ func (h *ChatHandler) getChunk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":              chunk.ID,
 		"document_id":     chunk.DocumentID,
+		"document_name":   chunk.DocumentName,   // File name e.g. "03_props-style-props.vtt"
+		"source_type":     chunk.SourceType,     // "vtt", "pdf", etc.
+		"source_url":      chunk.SourceURL,
 		"content":         chunk.Content,
 		"title":           chunk.Title,
 		"start_timestamp": chunk.StartTimestamp,
 		"end_timestamp":   chunk.EndTimestamp,
 		"page_number":     chunk.PageNumber,
 	})
+}
+
+func (h *ChatHandler) getConversationMessages(w http.ResponseWriter, r *http.Request) {
+	_, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+	convID := r.PathValue("id")
+	msgs, next, err := h.svc.GetConversationMessages(r.Context(), convID)
+	if err != nil {
+		notFoundOrInternal(w, err, "CONVERSATION_NOT_FOUND", "Conversation not found.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": msgs, "next_cursor": next})
+}
+
+func (h *ChatHandler) deleteConversation(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+	convID := r.PathValue("id")
+	if err := h.svc.DeleteConversation(r.Context(), claims.WorkspaceID, convID); err != nil {
+		notFoundOrInternal(w, err, "CONVERSATION_NOT_FOUND", "Conversation not found.")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ChatHandler) updateConversationTitle(w http.ResponseWriter, r *http.Request) {
+	_, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+	convID := r.PathValue("id")
+	var req updateConversationTitleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Title == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "title is required.")
+		return
+	}
+
+	if err := h.svc.UpdateConversationTitle(r.Context(), convID, req.Title); err != nil {
+		notFoundOrInternal(w, err, "CONVERSATION_NOT_FOUND", "Conversation not found.")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

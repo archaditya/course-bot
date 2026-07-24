@@ -1,22 +1,28 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  apiCreateConversation,
-  apiGetChunk,
-  apiGetConversationMessages,
-  getToken,
-  type Collection,
-  type ChunkDetail,
-  apiListCollections,
+  apiGetProject,
+  apiGetProjectCourses,
   apiListConversations,
+  apiCreateConversation,
+  apiGetConversationMessages,
+  apiGetChunk,
+  getToken,
+  apiDeleteConversation,
+  apiUpdateConversationTitle,
+  type Project,
+  type Course,
+  type Conversation,
+  type ChunkDetail,
 } from "@/lib/api";
-import { Spinner, CitationMarker } from "@/design-system";
+import { Spinner } from "@/design-system";
 
 interface Message {
   id: string;
@@ -30,479 +36,583 @@ interface Message {
   }>;
 }
 
-export default function ProjectChatPage() {
-  const { id: projectId } = useParams<{ id: string }>();
+export default function ChatPage() {
+  const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const projectId = params.id as string;
 
+  const [activeTab, setActiveTab] = useState<"chats" | "sources">("chats");
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [selectedCollectionId, setSelectedCollectionId] = useState<
-    string | null
-  >(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [selectedChunk, setSelectedChunk] = useState<ChunkDetail | null>(null);
   const [loadingChunk, setLoadingChunk] = useState(false);
-
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputQuery, setInputQuery] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Switching to a past conversation used to just swap the id while leaving
-  // whatever messages were already on screen — this actually loads that
-  // conversation's history.
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch project details
+  const { data: project } = useQuery<Project>({
+    queryKey: ["project", projectId],
+    queryFn: () => apiGetProject(projectId),
+  });
+
+  // Fetch indexed sources / courses
+  const { data: coursesData } = useQuery<{ items: Course[] }>({
+    queryKey: ["project-courses", projectId],
+    queryFn: () => apiGetProjectCourses(projectId),
+  });
+
+  // Fetch past conversations list
+  const { data: conversationsData } = useQuery<{ items: Conversation[] }>({
+    queryKey: ["conversations", projectId],
+    queryFn: () => apiListConversations(projectId),
+  });
+
+  const conversations = conversationsData?.items ?? [];
+
+  // Switch to a past conversation
   const openConversation = useCallback(async (id: string) => {
     setConversationId(id);
     setMessages([]);
     setLoadingHistory(true);
     try {
       const res = await apiGetConversationMessages(id);
-      setMessages(res.items as Message[]);
-    } catch {
-      // History couldn't be loaded (e.g. endpoint mismatch) — leave the
-      // thread empty rather than showing stale messages from another chat.
+      if (res?.items) {
+        setMessages(res.items as Message[]);
+      }
+    } catch (err) {
+      console.error("Failed to load conversation history", err);
     } finally {
       setLoadingHistory(false);
     }
   }, []);
 
+  // Start new conversation
   const startNewConversation = useCallback(() => {
     setConversationId(null);
     setMessages([]);
-    setStreamingContent("");
   }, []);
 
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'conversations' | 'sources'>('conversations');
-  const { data: conversationsData } = useQuery({
-    queryKey: ['conversations', projectId],
-    queryFn: () => apiListConversations(projectId),
-  });
-
-  const conversations = conversationsData?.items ?? [];
-
-  // Default tab fallback logic: if conversations exist, default to 'conversations', else 'sources'
-  useEffect(() => {
-    if (conversations?.length) {
-      setActiveSidebarTab('conversations');
-    } else {
-      setActiveSidebarTab('sources');
+  const handleDeleteConversation = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      await apiDeleteConversation(id);
+      if (id === conversationId) {
+        setConversationId(null);
+        setMessages([]);
+      }
+      queryClient.invalidateQueries({ queryKey: ["conversations", projectId] });
+    } catch (err) {
+      console.error("Failed to delete conversation", err);
     }
-  }, [conversationsData]);
+  };
 
-  // Poll courses list every 3s if any course is still processing
-  const { data: coursesData } = useQuery({
-    queryKey: ["courses", projectId],
-    queryFn: () => apiListCollections(projectId),
-    refetchInterval: (query) => {
-      const hasProcessing = query.state.data?.items?.some(
-        (c) => !["INDEXED", "CREATED", "FAILED"].includes(c.status),
-      );
-      return hasProcessing ? 3000 : false;
-    },
-  });
 
-  const indexedCollections =
-    coursesData?.items.filter(
-      (collection) => collection.status === "INDEXED",
-    ) ?? [];
 
+  // Auto-scroll messages
   useEffect(() => {
-    if (coursesData?.items?.length && !selectedCollectionId) {
-      const indexed = coursesData.items.find((c) => c.status === "INDEXED");
-      setSelectedCollectionId(indexed?.id ?? coursesData.items[0].id);
-    }
-  }, [coursesData, selectedCollectionId]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isStreaming]);
 
+  // Fetch single chunk detail when clicked
   useEffect(() => {
     if (!selectedChunkId) {
       setSelectedChunk(null);
       return;
     }
+    let mounted = true;
     setLoadingChunk(true);
-    apiGetChunk(selectedChunkId)
-      .then(setSelectedChunk)
-      .catch(() => setSelectedChunk(null))
-      .finally(() => setLoadingChunk(false));
+    (async () => {
+      try {
+        const chunk = await apiGetChunk(selectedChunkId);
+        if (mounted) setSelectedChunk(chunk);
+      } catch (err) {
+        console.error("Failed to fetch chunk", err);
+      } finally {
+        if (mounted) setLoadingChunk(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, [selectedChunkId]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent]);
+  // Send query via SSE Streaming
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isStreaming) return;
 
-  const handleSendMessage = useCallback(async () => {
-    const text = inputQuery.trim();
-    if (!text || isStreaming) return;
+    const userText = input.trim();
+    setInput("");
 
-    let convId = conversationId;
-    if (!convId) {
-      const conv = await apiCreateConversation(projectId);
-      convId = conv.id;
-      setConversationId(conv.id);
-      queryClient.invalidateQueries({ queryKey: ['conversations', projectId] });
-    }
+    let currentConvId = conversationId;
 
-    const targetCollectionId = selectedCollectionId;
-
-    if (!targetCollectionId) {
-      setMessages((previous) => [
-        ...previous,
-        {
-          id: `${Date.now()}-no-source`,
-          role: 'assistant',
-          content: 'Please select an indexed source before asking a question.',
-        },
-      ]);
-      return;
+    // Create conversation if starting fresh
+    if (!currentConvId) {
+      try {
+        const titleSummary = userText.length > 35 ? userText.slice(0, 35) + "…" : userText;
+        const newConv = await apiCreateConversation(projectId);
+        currentConvId = newConv.id;
+        setConversationId(newConv.id);
+        await apiUpdateConversationTitle(newConv.id, titleSummary);
+        queryClient.invalidateQueries({ queryKey: ["conversations", projectId] });
+      } catch (err) {
+        console.error("Failed to create conversation", err);
+        return;
+      }
     }
 
     const userMsg: Message = {
-      id: Date.now().toString(),
+      id: "user-" + Date.now(),
       role: "user",
-      content: text,
+      content: userText,
     };
-    setMessages((prev) => [...prev, userMsg]);
-    setInputQuery("");
-    setIsStreaming(true);
-    setStreamingContent("");
 
-    const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-    const token = getToken();
+    const assistantMsgId = "asst-" + Date.now();
+    const initialAssistantMsg: Message = {
+      id: assistantMsgId,
+      role: "assistant",
+      content: "",
+    };
+
+    setMessages((prev) => [...prev, userMsg, initialAssistantMsg]);
+    setIsStreaming(true);
 
     try {
-      const res = await fetch(`${BASE}/conversations/${convId}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ content: text, course_id: targetCollectionId }),
-      });
+      const token = getToken();
+      const response = await fetch(
+        `http://localhost:8080/conversations/${currentConvId}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ content: userText }),
+        }
+      );
 
-      if (!res.ok || !res.body) throw new Error(`Server error: ${res.status}`);
+      if (!response.ok || !response.body) {
+        throw new Error("Failed to start message stream");
+      }
 
-      const reader = res.body.getReader();
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let fullText = "";
-      let resultData: Message | null = null;
+      let assistantContent = "";
+      let citationsBuffer: Message["citations"] = [];
 
       while (true) {
-        const { done, value } = await reader.read();
+        const { value, done } = await reader.read();
         if (done) break;
-        const chunkText = decoder.decode(value);
-        for (const line of chunkText.split("\n")) {
+
+        const chunkText = decoder.decode(value, { stream: true });
+        const lines = chunkText.split("\n");
+
+        for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6);
-          if (payload === "[DONE]") break;
-          if (payload.startsWith("[RESULT]")) {
+          const raw = line.replace("data: ", "").trim();
+
+          if (raw === "[DONE]") {
+            break;
+          } else if (raw.startsWith("[RESULT]")) {
             try {
-              resultData = JSON.parse(payload.slice(8).trim());
-            } catch { }
-            continue;
+              const resObj = JSON.parse(raw.replace("[RESULT]", "").trim());
+              if (resObj.citations) {
+                citationsBuffer = resObj.citations;
+              }
+            } catch {
+              // Parse error
+            }
+          } else if (raw.startsWith("[ERROR:")) {
+            assistantContent += `\n\n*Error: ${raw}*`;
+          } else {
+            assistantContent += raw;
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMsgId
+                  ? { ...msg, content: assistantContent }
+                  : msg
+              )
+            );
           }
-          fullText += payload;
-          setStreamingContent(fullText);
         }
       }
 
-      const citationsList = resultData?.citations || (resultData as any)?.Citations;
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: resultData?.id ?? Date.now().toString() + "-a",
-          role: "assistant",
-          content: fullText,
-          citations: citationsList,
-        },
-      ]);
-      setStreamingContent("");
+      // Final update with citations
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMsgId
+            ? {
+              ...msg,
+              content: assistantContent,
+              citations: citationsBuffer,
+            }
+            : msg
+        )
+      );
+      queryClient.invalidateQueries({ queryKey: ["conversations", projectId] });
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString() + "-err",
-          role: "assistant",
-          content: `Error: ${err instanceof Error ? err.message : "Query failed"}`,
-        },
-      ]);
+      console.error("Stream error", err);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMsgId
+            ? {
+              ...msg,
+              content:
+                "Sorry, an error occurred while streaming the response.",
+            }
+            : msg
+        )
+      );
     } finally {
       setIsStreaming(false);
     }
-  }, [
-    inputQuery,
-    isStreaming,
-    conversationId,
-    projectId,
-    selectedCollectionId,
-    queryClient,
-    coursesData,
-  ]);
+  };
 
   return (
     <div
       style={{
         display: "flex",
         height: "calc(100vh - 64px)",
-        margin: "-32px -40px",
+        background: "#080e1a",
+        color: "var(--color-on-surface)",
         overflow: "hidden",
-        background: "var(--color-background)",
-        position: "relative",
       }}
     >
-      <aside style={{ width: "280px", flexShrink: 0, borderRight: "1px solid rgba(155, 155, 255, 0.18)", display: "flex", flexDirection: "column", background: "rgba(10, 18, 38, 0.55)" }}>
-        <div style={{ padding: "16px", borderBottom: "1px solid rgba(155, 155, 255, 0.14)" }}>
-          <button type="button" onClick={() => router.push(`/projects/${projectId}`)} style={{ border: 0, background: "transparent", color: "var(--color-primary)", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, marginBottom: "14px" }}>
-            <span className="material-symbols-outlined" style={{ fontSize: "17px" }}>arrow_back</span>
-            Back to project
+      {/* ── LEFT SIDEBAR: Two Tabs (Chats & Sources) ── */}
+      <aside
+        style={{
+          width: "280px",
+          background: "var(--color-surface-dim)",
+          borderRight: "1px solid var(--color-outline-variant)",
+          padding: "16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "14px",
+          overflowY: "auto",
+        }}
+      >
+        <Link
+          href={`/projects/${projectId}`}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            fontSize: "12px",
+            color: "var(--color-on-surface-variant)",
+            textDecoration: "none",
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+            arrow_back
+          </span>
+          Back to project
+        </Link>
+
+        {/* New Chat Button */}
+        <button
+          type="button"
+          onClick={startNewConversation}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            padding: "9px 12px",
+            borderRadius: "8px",
+            border: "1px solid var(--color-primary)",
+            background: "rgba(140, 136, 255, 0.1)",
+            color: "var(--color-primary)",
+            fontSize: "13px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+            add
+          </span>
+          New Chat
+        </button>
+
+        {/* Tab Switcher Header */}
+        <div
+          style={{
+            display: "flex",
+            background: "rgba(255, 255, 255, 0.05)",
+            borderRadius: "8px",
+            padding: "3px",
+            gap: "2px",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setActiveTab("chats")}
+            style={{
+              flex: 1,
+              padding: "6px 8px",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "12px",
+              fontWeight: 600,
+              background:
+                activeTab === "chats"
+                  ? "var(--color-primary)"
+                  : "transparent",
+              color: activeTab === "chats" ? "#fff" : "var(--color-on-surface-variant)",
+              transition: "all 0.2s ease",
+            }}
+          >
+            Chats ({conversations.length})
           </button>
           <button
             type="button"
-            onClick={startNewConversation}
+            onClick={() => setActiveTab("sources")}
             style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              padding: "9px 12px",
-              marginBottom: "10px",
-              borderRadius: "8px",
-              border: "1px solid var(--color-primary)",
-              background: "rgba(140, 136, 255, 0.1)",
-              color: "var(--color-primary)",
+              flex: 1,
+              padding: "6px 8px",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
               fontSize: "12px",
               fontWeight: 600,
-              cursor: "pointer",
+              background:
+                activeTab === "sources"
+                  ? "var(--color-primary)"
+                  : "transparent",
+              color: activeTab === "sources" ? "#fff" : "var(--color-on-surface-variant)",
+              transition: "all 0.2s ease",
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>add</span>
-            New chat
+            Sources ({coursesData?.items?.length || 0})
           </button>
-          {/* TABS HEADER */}
-          <div style={{ display: "flex", background: "rgba(155, 155, 255, 0.08)", borderRadius: "8px", padding: "3px", gap: "2px" }}>
-            <button
-              type="button"
-              onClick={() => setActiveSidebarTab('conversations')}
-              style={{
-                flex: 1, padding: "6px 8px", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600,
-                background: activeSidebarTab === 'conversations' ? "var(--color-primary)" : "transparent",
-                color: activeSidebarTab === 'conversations' ? "#fff" : "var(--color-on-surface-variant)",
-                transition: "all 0.2s ease",
-              }}
-            >
-              Chats ({conversations?.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveSidebarTab('sources')}
-              style={{
-                flex: 1, padding: "6px 8px", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600,
-                background: activeSidebarTab === 'sources' ? "var(--color-primary)" : "transparent",
-                color: activeSidebarTab === 'sources' ? "#fff" : "var(--color-on-surface-variant)",
-                transition: "all 0.2s ease",
-              }}
-            >
-              Sources ({indexedCollections.length})
-            </button>
-          </div>
         </div>
-        {/* TAB CONTENT BODY */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
-          {activeSidebarTab === 'conversations' ? (
+
+        {/* Tab Body */}
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {activeTab === "chats" ? (
             conversations.length === 0 ? (
-              <p style={{ textAlign: "center", color: "var(--color-on-surface-variant)", fontSize: "12px", padding: "20px 10px" }}>
-                No past chats found.
+              <p
+                style={{
+                  textAlign: "center",
+                  color: "var(--color-on-surface-variant)",
+                  fontSize: "12px",
+                  padding: "20px 10px",
+                }}
+              >
+                No past chats found. Click &quot;New Chat&quot; above.
               </p>
             ) : (
               conversations.map((conv) => {
                 const isSelected = conv.id === conversationId;
                 return (
-                  <button
+                  <div
                     key={conv.id}
-                    type="button"
                     onClick={() => {
                       if (conv.id !== conversationId) openConversation(conv.id);
                     }}
                     style={{
-                      width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${isSelected ? "var(--color-primary)" : "rgba(155, 155, 255, 0.14)"}`,
-                      background: isSelected ? "rgba(140, 136, 255, 0.15)" : "transparent", color: "var(--color-on-surface)", textAlign: "left", cursor: "pointer"
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: `1px solid ${isSelected ? "var(--color-primary)" : "rgba(255, 255, 255, 0.08)"
+                        }`,
+                      background: isSelected
+                        ? "rgba(140, 136, 255, 0.15)"
+                        : "rgba(30, 40, 60, 0.3)",
+                      color: "var(--color-on-surface)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: "16px", color: "var(--color-primary)" }}>chat</span>
-                      <span style={{ fontSize: "13px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
+                      <span
+                        className="material-symbols-outlined"
+                        style={{ fontSize: "16px", color: "var(--color-primary)", flexShrink: 0 }}
+                      >
+                        chat
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {conv.title || "Chat Session"}
                       </span>
                     </div>
-                  </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteConversation(e, conv.id)}
+                      title="Delete Conversation"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--color-on-surface-variant)",
+                        cursor: "pointer",
+                        padding: "2px",
+                        display: "flex",
+                        alignItems: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+                        delete
+                      </span>
+                    </button>
+                  </div>
+
                 );
               })
             )
           ) : (
-            indexedCollections.length === 0 ? (
-              <p style={{ textAlign: "center", color: "var(--color-on-surface-variant)", fontSize: "12px", padding: "20px 10px" }}>
+            coursesData?.items?.length === 0 ? (
+              <p
+                style={{
+                  textAlign: "center",
+                  color: "var(--color-on-surface-variant)",
+                  fontSize: "12px",
+                  padding: "20px 10px",
+                }}
+              >
                 No indexed sources found.
               </p>
             ) : (
-              indexedCollections.map((collection) => {
-                const isSelected = collection.id === selectedCollectionId;
-                return (
-                  <button
-                    key={collection.id}
-                    type="button"
-                    onClick={() => setSelectedCollectionId(collection.id)}
+              coursesData?.items?.map((c) => (
+                <div
+                  key={c.id}
+                  style={{
+                    padding: "10px 12px",
+                    background: "rgba(30, 40, 60, 0.4)",
+                    border: "1px solid rgba(255, 255, 255, 0.05)",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <span
+                    className="material-symbols-outlined"
+                    style={{ fontSize: "16px", color: "var(--color-primary)" }}
+                  >
+                    auto_stories
+                  </span>
+                  <span
                     style={{
-                      width: "100%", padding: "10px 12px", borderRadius: "8px", border: `1px solid ${isSelected ? "var(--color-primary)" : "rgba(155, 155, 255, 0.14)"}`,
-                      background: isSelected ? "rgba(140, 136, 255, 0.15)" : "transparent", color: "var(--color-on-surface)", textAlign: "left", cursor: "pointer"
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: "16px", color: "var(--color-primary)" }}>description</span>
-                      <span style={{ fontSize: "13px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {collection.title}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })
+                    {c.title}
+                  </span>
+                </div>
+              ))
             )
           )}
         </div>
       </aside>
 
-      {/* ── MAIN CHAT PANE ────────────────────────────────────────── */}
-      <section
+      {/* ── CENTER: Chat Container ── */}
+      <main
         style={{
           flex: 1,
           display: "flex",
           flexDirection: "column",
-          position: "relative",
+          background: "#080e1a",
         }}
       >
-        {/* Header */}
-        <div
-          style={{
-            padding: "16px 24px",
-            borderBottom: "1px solid rgba(70,69,84,0.3)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                fontFamily: "var(--font-geist)",
-                fontSize: "18px",
-                fontWeight: 700,
-                color: "var(--color-on-surface)",
-                margin: 0,
-              }}
-            >
-              archadiLM Assistant
-            </h2>
-            <p
-              style={{
-                fontFamily: "var(--font-inter)",
-                fontSize: "12px",
-                color: "var(--color-on-surface-variant)",
-                margin: 0,
-              }}
-            >
-              Ask questions across all indexed source material with grounded
-              citations.
-            </p>
-          </div>
-        </div>
-
-        {/* Message Stream */}
+        {/* Messages Feed */}
         <div
           style={{
             flex: 1,
-            overflowY: "auto",
             padding: "24px",
+            overflowY: "auto",
             display: "flex",
             flexDirection: "column",
             gap: "20px",
-            paddingBottom: "120px",
           }}
         >
-          {loadingHistory && (
-            <div style={{ margin: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-              <Spinner size={24} color="var(--color-primary)" />
-              <span style={{ fontSize: "12px", color: "var(--color-on-surface-variant)" }}>Loading conversation…</span>
-            </div>
-          )}
-          {!loadingHistory && messages.length === 0 && !isStreaming && (
+          {loadingHistory ? (
             <div
-              style={{ margin: "auto", textAlign: "center", maxWidth: "400px" }}
+              style={{
+                margin: "auto",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <Spinner size={24} color="var(--color-primary)" />
+              <span style={{ fontSize: "12px", color: "var(--color-on-surface-variant)" }}>
+                Loading conversation history...
+              </span>
+            </div>
+          ) : messages.length === 0 ? (
+            <div
+              style={{
+                margin: "auto",
+                textAlign: "center",
+                maxWidth: "400px",
+                color: "var(--color-on-surface-variant)",
+              }}
             >
               <span
                 className="material-symbols-outlined"
                 style={{
-                  color: "var(--color-primary)",
                   fontSize: "48px",
+                  color: "var(--color-primary)",
                   marginBottom: "12px",
                 }}
               >
-                psychology
+                chat_spark
               </span>
-              <h3
-                style={{
-                  fontFamily: "var(--font-geist)",
-                  fontSize: "18px",
-                  fontWeight: 600,
-                  marginBottom: "8px",
-                }}
-              >
-                Ask anything about your material
-              </h3>
-              <p
-                style={{
-                  fontFamily: "var(--font-inter)",
-                  fontSize: "13px",
-                  color: "var(--color-on-surface-variant)",
-                }}
-              >
-                Index PDFs, web links, or text notes on the left pane and get
-                vector-grounded responses with exact citations.
+              <h3 style={{ margin: "0 0 8px 0" }}>archadiLM Assistant</h3>
+              <p style={{ fontSize: "13px", lineHeight: 1.5 }}>
+                Ask questions across all indexed source material with grounded
+                citations.
               </p>
             </div>
-          )}
-
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              style={{
-                display: "flex",
-                justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-              }}
-            >
-              {m.role === "user" ? (
+          ) : (
+            messages.map((m) => (
+              <div
+                key={m.id}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems:
+                    m.role === "user" ? "flex-end" : "flex-start",
+                }}
+              >
                 <div
                   style={{
-                    maxWidth: "80%",
-                    padding: "12px 16px",
+                    maxWidth: "85%",
+                    padding: "16px 20px",
                     borderRadius: "16px",
-                    background: "var(--color-surface-container-highest)",
-                    color: "var(--color-on-surface)",
-                    fontSize: "14px",
+                    background:
+                      m.role === "user"
+                        ? "var(--color-primary-container)"
+                        : "rgba(22, 32, 54, 0.7)",
+                    border:
+                      m.role === "user"
+                        ? "none"
+                        : "1px solid rgba(255, 255, 255, 0.08)",
                   }}
                 >
-                  {m.content}
-                </div>
-              ) : (
-                <div
-                  className="glass-panel"
-                  style={{
-                    maxWidth: "90%",
-                    padding: "20px",
-                    borderRadius: "16px",
-                  }}
-                >
-                  {/* Markdown Response Content */}
+                  {/* Message Content */}
                   <div style={{ fontSize: "14px", lineHeight: 1.7 }}>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {m.content}
@@ -556,7 +666,8 @@ export default function ProjectChatPage() {
                                 gap: "8px",
                                 padding: "8px 12px",
                                 background: "rgba(10, 18, 38, 0.6)",
-                                border: "1px solid rgba(155, 155, 255, 0.2)",
+                                border:
+                                  "1px solid rgba(155, 155, 255, 0.2)",
                                 borderRadius: "8px",
                                 cursor: "pointer",
                                 color: "var(--color-on-surface)",
@@ -605,119 +716,69 @@ export default function ProjectChatPage() {
                       </div>
                     </div>
                   )}
-
                 </div>
-              )}
-            </div>
-          ))}
-
-          {isStreaming && (
-            <div
-              className="glass-panel"
-              style={{ padding: "20px", borderRadius: "16px" }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  marginBottom: "8px",
-                }}
-              >
-                <Spinner size={14} color="var(--color-primary)" />
-                <span
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--color-primary)",
-                    fontFamily: "var(--font-geist)",
-                  }}
-                >
-                  Generating response...
-                </span>
               </div>
-              <div style={{ fontSize: "14px", lineHeight: 1.7 }}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {streamingContent}
-                </ReactMarkdown>
-              </div>
-            </div>
+            ))
           )}
-          <div ref={bottomRef} />
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input Bar */}
-        <div
+        <form
+          onSubmit={handleSend}
           style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            padding: "20px 24px",
-            background:
-              "linear-gradient(to top, var(--color-background) 70%, transparent)",
+            padding: "16px 24px",
+            borderTop: "1px solid var(--color-outline-variant)",
+            display: "flex",
+            gap: "12px",
+            background: "var(--color-surface-dim)",
           }}
         >
-          <div
-            className="glass-panel"
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask a question about your indexed materials..."
+            disabled={isStreaming}
             style={{
-              maxWidth: "900px",
-              margin: "0 auto",
-              borderRadius: "16px",
-              padding: "8px 12px",
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
+              flex: 1,
+              padding: "12px 16px",
+              borderRadius: "10px",
+              background: "rgba(20, 28, 48, 0.8)",
+              border: "1px solid var(--color-outline-variant)",
+              color: "#fff",
+              fontSize: "14px",
+              outline: "none",
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || isStreaming}
+            style={{
+              padding: "0 20px",
+              borderRadius: "10px",
+              background: "var(--color-primary)",
+              color: "var(--color-on-primary)",
+              border: "none",
+              fontWeight: 600,
+              cursor: "pointer",
+              opacity: !input.trim() || isStreaming ? 0.5 : 1,
             }}
           >
-            <input
-              type="text"
-              value={inputQuery}
-              onChange={(e) => setInputQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              placeholder="Ask a question about your indexed materials..."
-              disabled={isStreaming || indexedCollections.length === 0}
-              style={{
-                flex: 1,
-                background: "transparent",
-                border: "none",
-                outline: "none",
-                fontFamily: "var(--font-inter)",
-                fontSize: "14px",
-                color: "var(--color-on-surface)",
-              }}
-            />
-            <button
-              onClick={handleSendMessage}
-              disabled={!inputQuery.trim() || isStreaming}
-              style={{
-                padding: "10px 20px",
-                background: "var(--color-primary)",
-                color: "var(--color-on-primary)",
-                border: "none",
-                borderRadius: "10px",
-                fontFamily: "var(--font-geist)",
-                fontSize: "13px",
-                fontWeight: 600,
-                cursor:
-                  !inputQuery.trim() || isStreaming ? "not-allowed" : "pointer",
-                opacity: !inputQuery.trim() || isStreaming ? 0.5 : 1,
-              }}
-            >
-              Ask
-            </button>
-          </div>
-        </div>
-      </section>
+            {isStreaming ? (
+              <Spinner size={16} color="var(--color-on-primary)" />
+            ) : (
+              "Send"
+            )}
+          </button>
+        </form>
+      </main>
 
-      {/* ── Citation drawer (overlay, not an in-flow column) ─────────── */}
-      {/* This used to be a permanent 320px flex sibling that, combined with
-          the 280px sidebar, crushed the main chat column. As a fixed overlay
-          it only takes space while a citation is actually open. */}
+      {/* ── RIGHT SLIDE-OVER: User-Friendly Source Material Detail ── */}
       <AnimatePresence>
         {selectedChunkId && (
           <>
             <motion.div
-              key="chunk-backdrop"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -725,22 +786,22 @@ export default function ProjectChatPage() {
               style={{
                 position: "fixed",
                 inset: 0,
-                background: "rgba(0,0,0,0.35)",
+                background: "rgba(0, 0, 0, 0.4)",
                 zIndex: 90,
               }}
             />
+
             <motion.aside
-              key="chunk-drawer"
-              initial={{ x: 360, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 360, opacity: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 250 }}
               style={{
                 position: "fixed",
                 top: 0,
                 right: 0,
                 height: "100vh",
-                width: "360px",
+                width: "400px",
                 maxWidth: "90vw",
                 background: "var(--color-surface-dim)",
                 borderLeft: "1px solid var(--color-outline-variant)",
@@ -764,10 +825,12 @@ export default function ProjectChatPage() {
                   style={{
                     fontFamily: "var(--font-geist)",
                     fontSize: "16px",
+                    fontWeight: 600,
                     margin: 0,
+                    color: "var(--color-on-surface)",
                   }}
                 >
-                  Source Chunk
+                  Source Material
                 </h3>
                 <button
                   onClick={() => setSelectedChunkId(null)}
@@ -776,37 +839,87 @@ export default function ProjectChatPage() {
                     border: "none",
                     color: "var(--color-on-surface-variant)",
                     cursor: "pointer",
+                    fontSize: "18px",
                   }}
                 >
                   ✕
                 </button>
               </div>
+
               {loadingChunk ? (
-                <Spinner size={24} color="var(--color-primary)" />
+                <div style={{ margin: "auto" }}>
+                  <Spinner size={24} color="var(--color-primary)" />
+                </div>
               ) : selectedChunk ? (
-                <div>
-                  <h4
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {/* Source Metadata Card */}
+                  <div
                     style={{
-                      fontFamily: "var(--font-geist)",
-                      fontSize: "14px",
-                      marginBottom: "8px",
-                      color: "var(--color-primary)",
+                      padding: "14px",
+                      background: "rgba(35, 45, 70, 0.5)",
+                      borderRadius: "10px",
+                      border: "1px solid rgba(155, 155, 255, 0.15)",
                     }}
                   >
-                    {selectedChunk.title || "Source Citation"}
-                  </h4>
-                  <p
-                    style={{
-                      fontSize: "13px",
-                      lineHeight: 1.6,
-                      background: "rgba(45,52,73,0.3)",
-                      padding: "12px",
-                      borderRadius: "8px",
-                      color: "var(--color-on-surface-variant)",
-                    }}
-                  >
-                    {selectedChunk.content}
-                  </p>
+                    <h4
+                      style={{
+                        fontFamily: "var(--font-geist)",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        margin: "0 0 6px 0",
+                        color: "var(--color-primary)",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {selectedChunk.title || "Document Source"}
+                    </h4>
+                    {selectedChunk.start_timestamp != null && (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          color: "var(--color-secondary)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        ⏱ Timestamp: {Math.floor(selectedChunk.start_timestamp / 60)}:{String(selectedChunk.start_timestamp % 60).padStart(2, "0")}
+                        {selectedChunk.end_timestamp != null &&
+                          ` - ${Math.floor(selectedChunk.end_timestamp / 60)}:${String(selectedChunk.end_timestamp % 60).padStart(2, "0")}`}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Excerpt Body */}
+                  <div>
+                    <p
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        color: "var(--color-on-surface-variant)",
+                        margin: "0 0 8px 0",
+                      }}
+                    >
+                      Extracted Excerpt
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "13px",
+                        lineHeight: 1.65,
+                        background: "rgba(18, 26, 46, 0.7)",
+                        padding: "14px",
+                        borderRadius: "10px",
+                        border: "1px solid rgba(255, 255, 255, 0.08)",
+                        color: "var(--color-on-surface)",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {selectedChunk.content}
+                    </p>
+                  </div>
                 </div>
               ) : null}
             </motion.aside>

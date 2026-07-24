@@ -77,3 +77,18 @@ func (r *conversationRepository) ListByProject(ctx context.Context, ws repositor
 	}
 	return convs, next, rows.Err()
 }
+
+func (r *conversationRepository) UpdateTitle(ctx context.Context, id, title string) error {
+	const q = `UPDATE conversations SET title = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.ExecContext(ctx, q, id, title)
+	return err
+}
+
+func (r *conversationRepository) Delete(ctx context.Context, ws repository.WorkspaceID, id string) error {
+	const q = `
+		DELETE FROM conversations c
+		USING projects p
+		WHERE c.id = $1 AND c.project_id = p.id AND p.workspace_id = $2`
+	_, err := r.db.ExecContext(ctx, q, id, ws)
+	return err
+}

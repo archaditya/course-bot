@@ -16,15 +16,15 @@ import (
 )
 
 type Config struct {
-	AIServiceURL string
-	Database     DatabaseConfig
-	Redis        RedisConfig
-	R2           R2Config
-	Qdrant       QdrantConfig
-	Auth         AuthConfig
-	Providers    ProvidersConfig
-	Flags        FeatureFlags
-	ServiceEnv   string // local | staging | prod
+	AIServiceURL      string
+	Database          DatabaseConfig
+	Redis             RedisConfig
+	R2                R2Config
+	Qdrant            QdrantConfig
+	Auth              AuthConfig
+	Providers         ProvidersConfig
+	Flags             FeatureFlags
+	ServiceEnv        string   // local | staging | prod
 	AllowedURLDomains []string `env:"ALLOWED_URL_DOMAINS" envSeparator:","`
 
 	Sentry struct {
@@ -151,7 +151,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg.Sentry.DSN = os.Getenv("SENTRY_DSN")
-	
+
 	return cfg, nil
 }
 

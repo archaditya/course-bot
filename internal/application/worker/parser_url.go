@@ -12,14 +12,14 @@ import (
 // Delegates to the AI Service's /extract-url endpoint which uses
 // BeautifulSoup + readability extraction.
 func parseURL(doc *entities.Document, aiClient *llm.Client, allowedDomains []string) (*entities.NormalizedDocument, error) {
-    if doc.SourceURL == "" {
-        return nil, fmt.Errorf("url: document has no source URL")
-    }
- 
-    extracted, err := aiClient.ExtractURL(context.Background(), doc.SourceURL, allowedDomains)
-    if err != nil {
-        return nil, fmt.Errorf("url: extraction: %w", err)
-    }
+	if doc.SourceURL == "" {
+		return nil, fmt.Errorf("url: document has no source URL")
+	}
+
+	extracted, err := aiClient.ExtractURL(context.Background(), doc.SourceURL, allowedDomains)
+	if err != nil {
+		return nil, fmt.Errorf("url: extraction: %w", err)
+	}
 
 	nd := &entities.NormalizedDocument{
 		Language:             "en",

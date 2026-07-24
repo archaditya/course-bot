@@ -1,8 +1,7 @@
 package observability
 
 import (
-	"net/http"
-    "time"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	sentryhttp "github.com/getsentry/sentry-go/http"
@@ -22,10 +21,13 @@ func CaptureException(err error) {
 }
 
 func CaptureMessage(message string, level sentry.Level) {
-	sentry.CaptureMessage(message, level)
+	sentry.WithScope(func(scope *sentry.Scope) {
+		scope.SetLevel(level)
+		sentry.CaptureMessage(message)
+	})
 }
 
-func GetSentryHandler() http.Handler {
+func GetSentryHandler() *sentryhttp.Handler {
 	return sentryhttp.New(sentryhttp.Options{})
 }
 

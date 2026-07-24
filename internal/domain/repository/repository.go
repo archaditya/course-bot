@@ -94,6 +94,8 @@ type ConversationRepository interface {
 	Create(ctx context.Context, c *entities.Conversation) error
 	GetByID(ctx context.Context, ws WorkspaceID, id string) (*entities.Conversation, error)
 	ListByProject(ctx context.Context, ws WorkspaceID, projectID string, cursor string, limit int) ([]*entities.Conversation, string, error)
+	UpdateTitle(ctx context.Context, id string, title string) error
+	Delete(ctx context.Context, ws WorkspaceID, id string) error
 }
 
 type MessageRepository interface {

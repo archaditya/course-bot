@@ -10,6 +10,9 @@ import "time"
 type Chunk struct {
 	ID               string
 	DocumentID       string
+	DocumentName     string // e.g. "03_props-style-props_epm.vtt"
+	SourceType       string // e.g. "vtt", "pdf", "url"
+	SourceURL        string
 	CourseID         string // denormalized: needed as a Qdrant payload filter for workspace/course isolation
 	StartTimestamp   *int   // nullable — page-based sources have no timestamp
 	EndTimestamp     *int   // nullable

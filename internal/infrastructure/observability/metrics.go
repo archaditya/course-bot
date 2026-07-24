@@ -11,24 +11,24 @@ type Metrics struct {
 	ChunkerProcessingTime   atomic.Int64
 	MetadataProcessingTime  atomic.Int64
 	EmbeddingProcessingTime atomic.Int64
-	
+
 	// Queue depths
-	UploadQueueDepth    atomic.Int64
-	ManifestQueueDepth  atomic.Int64
-	ParseQueueDepth     atomic.Int64
-	ChunkQueueDepth     atomic.Int64
-	MetadataQueueDepth  atomic.Int64
-	
+	UploadQueueDepth   atomic.Int64
+	ManifestQueueDepth atomic.Int64
+	ParseQueueDepth    atomic.Int64
+	ChunkQueueDepth    atomic.Int64
+	MetadataQueueDepth atomic.Int64
+
 	// Error counts
 	ParserErrors    atomic.Int64
 	ChunkerErrors   atomic.Int64
 	MetadataErrors  atomic.Int64
 	EmbeddingErrors atomic.Int64
-	
+
 	// AI Service metrics
-	AIServiceLatency  atomic.Int64
-	AIServiceErrors   atomic.Int64
-	AIServiceCalls    atomic.Int64
+	AIServiceLatency atomic.Int64
+	AIServiceErrors  atomic.Int64
+	AIServiceCalls   atomic.Int64
 }
 
 var GlobalMetrics = &Metrics{}

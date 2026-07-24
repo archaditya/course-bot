@@ -18,9 +18,9 @@ import (
 // TextProcessorWorker combines Parser and Chunker stages
 type TextProcessorWorker struct {
 	base
-	documents repository.DocumentRepository
-	objects   provider.ObjectStore
-	aiClient  *llm.Client
+	documents         repository.DocumentRepository
+	objects           provider.ObjectStore
+	aiClient          *llm.Client
 	allowedURLDomains []string
 }
 
@@ -53,7 +53,7 @@ func (w *TextProcessorWorker) Run(ctx context.Context) error {
 		return fmt.Errorf("text-processor: consume: %w", err)
 	}
 	log.Println("text processor worker: listening on", stream)
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -76,13 +76,13 @@ func (w *TextProcessorWorker) handle(ctx context.Context, qe provider.QueuedEven
 	courseID, _ := qe.Payload["course_id"].(string)
 	docID, _ := qe.Payload["document_id"].(string)
 	jobID, _ := qe.Payload["job_id"].(string)
-	
+
 	job, err := w.jobs.GetByID(ctx, jobID)
 	if err != nil {
 		log.Printf("text-processor: get job %s: %v", jobID, err)
 		return
 	}
-	
+
 	for attempt := 1; attempt <= job.MaxAttempts; attempt++ {
 		if err := w.startJob(ctx, job); err != nil {
 			log.Printf("text-processor: start job: %v", err)
@@ -119,26 +119,26 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
 	observability.RecordProcessingTime("parser", time.Since(parseStart))
 
 	// Store normalized in Postgres instead of R2
-    data, err := json.Marshal(normalized)
-    if err != nil {
-        return fmt.Errorf("text-processor: marshal: %w", err)
-    }
-    
-    if err := w.documents.SetNormalizedData(ctx, docID, data, NormalizationVersion); err != nil {
-        return fmt.Errorf("text-processor: set normalized data: %w", err)
-    }
-	
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return fmt.Errorf("text-processor: marshal: %w", err)
+	}
+
+	if err := w.documents.SetNormalizedData(ctx, docID, data, NormalizationVersion); err != nil {
+		return fmt.Errorf("text-processor: set normalized data: %w", err)
+	}
+
 	// Step 2: Chunk immediately (was Chunker)
 	chunkStart := time.Now()
 	chunks := w.slidingWindowChunk(normalized.Segments, courseID, docID)
 	observability.RecordProcessingTime("chunker", time.Since(chunkStart))
-	
+
 	// Step 3: Store chunks in Postgres (skip R2 intermediate)
 	chunkPtrs := make([]*entities.Chunk, len(chunks))
 	for i := range chunks {
 		chunkPtrs[i] = &chunks[i]
 	}
-	
+
 	// Create indexer job
 	indexerJobID := w.ids.New()
 	indexerJob := &entities.Job{
@@ -153,13 +153,13 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
 	if err := w.jobs.Create(ctx, indexerJob); err != nil {
 		return fmt.Errorf("text-processor: create indexer job: %w", err)
 	}
-	
+
 	// Publish TEXT_PROCESSED event with chunks
 	chunkData, err := json.Marshal(chunks)
 	if err != nil {
 		return fmt.Errorf("text-processor: marshal chunks: %w", err)
 	}
-	
+
 	return w.queue.Publish(ctx, "pipeline:text-processed", provider.Event{
 		Name: "TEXT_PROCESSED",
 		Payload: map[string]any{
@@ -223,7 +223,7 @@ func (w *TextProcessorWorker) slidingWindowChunk(segs []entities.Segment, course
 	const defaultWindowSize = 20
 	const defaultOverlap = 2
 	step := defaultWindowSize - defaultOverlap
-	
+
 	var chunks []entities.Chunk
 	for i := 0; i < len(segs); i += step {
 		end := i + defaultWindowSize
@@ -231,13 +231,13 @@ func (w *TextProcessorWorker) slidingWindowChunk(segs []entities.Segment, course
 			end = len(segs)
 		}
 		window := segs[i:end]
-		
+
 		texts := make([]string, len(window))
 		for j, s := range window {
 			texts[j] = s.Text
 		}
 		content := strings.Join(texts, " ")
-		
+
 		c := entities.Chunk{
 			ID:               w.ids.New(),
 			DocumentID:       docID,

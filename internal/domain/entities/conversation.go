@@ -24,28 +24,31 @@ const (
 
 // Conversation is a chat thread within a Project.
 type Conversation struct {
-	ID        string
-	ProjectID string
-	Title     string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Message is one turn inside a Conversation.
 type Message struct {
-	ID             string
-	ConversationID string
-	Role           MessageRole
-	Content        string
-	Status         MessageStatus
-	CreatedAt      time.Time
+	ID             string        `json:"id"`
+	ConversationID string        `json:"conversation_id"`
+	Role           MessageRole   `json:"role"`
+	Content        string        `json:"content"`
+	Status         MessageStatus `json:"status"`
+	CreatedAt      time.Time     `json:"created_at"`
+	Citations      []*Citation   `json:"citations,omitempty"`
 }
 
 // Citation links a Message back to the Chunk(s) it was grounded in.
 type Citation struct {
-	ID             string
-	MessageID      string
-	ChunkID        string
-	StartTimestamp *int
-	PageNumber     *int
+	ID             string `json:"id"`
+	MessageID      string `json:"message_id"`
+	ChunkID        string `json:"chunk_id"`
+	StartTimestamp *int   `json:"start_timestamp,omitempty"`
+	PageNumber     *int   `json:"page_number,omitempty"`
+	DocumentID     string `json:"document_id,omitempty"`
+	Title          string `json:"title,omitempty"`
 }

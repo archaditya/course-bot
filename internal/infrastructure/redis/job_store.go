@@ -24,7 +24,7 @@ func (s *JobStore) SetJob(ctx context.Context, job *entities.Job) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return s.client.Set(ctx, key, data, 24*time.Hour).Err()
 }
 
@@ -34,7 +34,7 @@ func (s *JobStore) GetJob(ctx context.Context, jobID string) (*entities.Job, err
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var job entities.Job
 	err = json.Unmarshal(data, &job)
 	return &job, err

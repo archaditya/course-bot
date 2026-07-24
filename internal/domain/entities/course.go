@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// CourseStatus mirrors the Course Lifecycle state machine in
-// docs/03-domain-model.md#course-lifecycle.
 type CourseStatus string
 
 const (
@@ -17,6 +15,7 @@ const (
 	CourseStatusNormalizing CourseStatus = "NORMALIZING"
 	CourseStatusChunking    CourseStatus = "CHUNKING"
 	CourseStatusEmbedding   CourseStatus = "EMBEDDING"
+	CourseStatusIndexing    CourseStatus = "EMBEDDING"
 	CourseStatusIndexed     CourseStatus = "INDEXED"
 	CourseStatusFailed      CourseStatus = "FAILED"
 )

@@ -24,9 +24,9 @@ import (
 
 // Store wraps an S3 client pointed at Cloudflare R2.
 type Store struct {
-	client *s3.Client
-	signer *s3.PresignClient
-	bucket string
+	client         *s3.Client
+	signer         *s3.PresignClient
+	bucket         string
 	circuitBreaker *resilience.CircuitBreaker
 }
 
@@ -62,57 +62,57 @@ func NewStore(accountIDOrEndpoint, accessKeyID, secretAccessKey, bucket string) 
 	})
 
 	return &Store{
-		client: client,
-		signer: s3.NewPresignClient(client),
-		bucket: bucket,
+		client:         client,
+		signer:         s3.NewPresignClient(client),
+		bucket:         bucket,
 		circuitBreaker: resilience.NewCircuitBreaker(5, 30*time.Second),
 	}, nil
 }
 
 func (s *Store) Put(ctx context.Context, key string, data []byte, contentType string) error {
-    err := s.circuitBreaker.Execute(ctx, func() error {
-        _, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-            Bucket:      aws.String(s.bucket),
-            Key:         aws.String(key),
-            Body:        bytes.NewReader(data),
-            ContentType: aws.String(contentType),
-        })
-        return err
-    })
-    
-    if err != nil {
-        if err == resilience.ErrCircuitOpen {
-            return fmt.Errorf("r2: circuit breaker open, R2 unavailable")
-        }
-        return fmt.Errorf("r2: put %s: %w", key, err)
-    }
-    return nil
+	err := s.circuitBreaker.Execute(ctx, func() error {
+		_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:      aws.String(s.bucket),
+			Key:         aws.String(key),
+			Body:        bytes.NewReader(data),
+			ContentType: aws.String(contentType),
+		})
+		return err
+	})
+
+	if err != nil {
+		if err == resilience.ErrCircuitOpen {
+			return fmt.Errorf("r2: circuit breaker open, R2 unavailable")
+		}
+		return fmt.Errorf("r2: put %s: %w", key, err)
+	}
+	return nil
 }
 
 // Get retrieves the object at key. Returns the raw bytes.
 func (s *Store) Get(ctx context.Context, key string) ([]byte, error) {
-    var data []byte
-    err := s.circuitBreaker.Execute(ctx, func() error {
-        out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
-            Bucket: aws.String(s.bucket),
-            Key:    aws.String(key),
-        })
-        if err != nil {
-            return err
-        }
-        defer out.Body.Close()
-        var readErr error
-        data, readErr = io.ReadAll(out.Body)
-        return readErr
-    })
-    
-    if err != nil {
-        if err == resilience.ErrCircuitOpen {
-            return nil, fmt.Errorf("r2: circuit breaker open, R2 unavailable")
-        }
-        return nil, fmt.Errorf("r2: get %s: %w", key, err)
-    }
-    return data, nil
+	var data []byte
+	err := s.circuitBreaker.Execute(ctx, func() error {
+		out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+		var readErr error
+		data, readErr = io.ReadAll(out.Body)
+		return readErr
+	})
+
+	if err != nil {
+		if err == resilience.ErrCircuitOpen {
+			return nil, fmt.Errorf("r2: circuit breaker open, R2 unavailable")
+		}
+		return nil, fmt.Errorf("r2: get %s: %w", key, err)
+	}
+	return data, nil
 }
 
 // SignedPutURL issues a short-lived, single-use presigned PUT URL scoped to
@@ -149,16 +149,15 @@ func (s *Store) SignedGetURL(ctx context.Context, key string, expiry time.Durati
 // Compile-time assertion: Store implements the domain interface.
 var _ provider.ObjectStore = (*Store)(nil)
 
-
 // Health checks if R2 is accessible by attempting to list objects with a limit of 1.
 // This is a lightweight check that verifies connectivity and credentials.
 func (s *Store) Health(ctx context.Context) error {
-    _, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-        Bucket:  aws.String(s.bucket),
-        MaxKeys: aws.Int32(1),
-    })
-    if err != nil {
-        return fmt.Errorf("r2: health check failed: %w", err)
-    }
-    return nil
+	_, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket:  aws.String(s.bucket),
+		MaxKeys: aws.Int32(1),
+	})
+	if err != nil {
+		return fmt.Errorf("r2: health check failed: %w", err)
+	}
+	return nil
 }

@@ -17,6 +17,7 @@ const (
 	JobStageMetadata  JobStage = "metadata"
 	JobStageEmbedding JobStage = "embedding"
 	JobStageIndex     JobStage = "indexing"
+	JobStageIndexing  JobStage = "indexing"
 )
 
 // JobStatus mirrors the Job Lifecycle state machine in
