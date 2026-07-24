@@ -175,6 +175,21 @@ func (s *Store) postNoResp(ctx context.Context, path string, body []byte) error 
 	return nil
 }
 
+// Ping checks that Qdrant is reachable and the collection exists. Used by
+// the API's /healthz check.
+func (s *Store) Ping(ctx context.Context) error {
+	resp, err := s.doRequest(ctx, http.MethodGet, "/collections/"+s.collection, nil)
+	if err != nil {
+		return fmt.Errorf("qdrant: ping: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("qdrant: ping: status %d: %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}
+
 func (s *Store) doRequest(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {

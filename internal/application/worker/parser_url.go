@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 
 	"archadilm/internal/domain/entities"
@@ -10,15 +11,15 @@ import (
 // parseURL fetches and extracts readable text content from a web URL.
 // Delegates to the AI Service's /extract-url endpoint which uses
 // BeautifulSoup + readability extraction.
-func parseURL(doc *entities.Document, aiClient *llm.Client) (*entities.NormalizedDocument, error) {
-	if doc.SourceURL == "" {
-		return nil, fmt.Errorf("url: document has no source URL")
-	}
-
-	extracted, err := aiClient.ExtractURL(doc.SourceURL)
-	if err != nil {
-		return nil, fmt.Errorf("url: extraction: %w", err)
-	}
+func parseURL(doc *entities.Document, aiClient *llm.Client, allowedDomains []string) (*entities.NormalizedDocument, error) {
+    if doc.SourceURL == "" {
+        return nil, fmt.Errorf("url: document has no source URL")
+    }
+ 
+    extracted, err := aiClient.ExtractURL(context.Background(), doc.SourceURL, allowedDomains)
+    if err != nil {
+        return nil, fmt.Errorf("url: extraction: %w", err)
+    }
 
 	nd := &entities.NormalizedDocument{
 		Language:             "en",

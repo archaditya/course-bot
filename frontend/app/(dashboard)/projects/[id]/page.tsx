@@ -25,7 +25,7 @@ export default function ProjectChoicePage() {
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
       <button
-        onClick={() => router.push('/')}
+        onClick={() => router.push('/projects')}
         style={{
           background: 'none',
           border: 'none',

@@ -26,6 +26,7 @@ type ParserWorker struct {
 	documents repository.DocumentRepository
 	objects   provider.ObjectStore
 	aiClient  *llm.Client
+	allowedURLDomains []string
 }
 
 func NewParserWorker(
@@ -36,12 +37,14 @@ func NewParserWorker(
 	queue provider.Queue,
 	ids provider.IDGenerator,
 	aiClient *llm.Client,
+	allowedURLDomains []string,
 ) *ParserWorker {
 	return &ParserWorker{
-		base:      base{courses: courses, jobs: jobs, queue: queue, ids: ids},
-		documents: documents,
-		objects:   objects,
-		aiClient:  aiClient,
+		base:              base{courses: courses, jobs: jobs, queue: queue, ids: ids},
+		documents:         documents,
+		objects:           objects,
+		aiClient:          aiClient,
+		allowedURLDomains: allowedURLDomains,
 	}
 }
 
@@ -144,7 +147,7 @@ func (w *ParserWorker) process(ctx context.Context, courseID, docID, traceID str
 		}
 
 	case entities.SourceTypeURL, entities.SourceTypeVideo:
-		normalized, err = parseURL(doc, w.aiClient)
+		normalized, err = parseURL(doc, w.aiClient, w.allowedURLDomains)
 		if err != nil {
 			return fmt.Errorf("parser: url: %w", err)
 		}

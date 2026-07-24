@@ -38,6 +38,47 @@ func NewQueue(url string) (*Queue, error) {
 // Close releases the underlying connection pool.
 func (q *Queue) Close() error { return q.client.Close() }
 
+// Ping checks that Redis is reachable. Used by the API's /healthz check.
+func (q *Queue) Ping(ctx context.Context) error {
+	return q.client.Ping(ctx).Err()
+}
+
+// Client returns the underlying go-redis client, for callers that need to
+// build another Redis-backed component (e.g. JobStore) against the same
+// connection rather than opening a second one.
+func (q *Queue) Client() *goredis.Client {
+	return q.client
+}
+
+// FetchStreamEntry reads a single message from `stream` by its Redis Stream
+// entry ID (e.g. "1700000000000-0") and decodes it back into an Event. Used
+// by DLQ replay to look up one dead-lettered entry without consuming the
+// whole stream.
+func (q *Queue) FetchStreamEntry(ctx context.Context, stream, id string) (provider.Event, error) {
+	msgs, err := q.client.XRange(ctx, stream, id, id).Result()
+	if err != nil {
+		return provider.Event{}, fmt.Errorf("redis: fetch entry %s from %s: %w", id, stream, err)
+	}
+	if len(msgs) == 0 {
+		return provider.Event{}, fmt.Errorf("redis: entry %s not found in %s", id, stream)
+	}
+
+	name, _ := msgs[0].Values["name"].(string)
+	payloadStr, _ := msgs[0].Values["payload"].(string)
+	traceID, _ := msgs[0].Values["trace_id"].(string)
+
+	var payload map[string]any
+	_ = json.Unmarshal([]byte(payloadStr), &payload)
+
+	return provider.Event{Name: name, Payload: payload, TraceID: traceID}, nil
+}
+
+// DeleteStreamEntry removes a single message from `stream` by ID (XDEL).
+// Used to remove a DLQ entry once it has been successfully replayed.
+func (q *Queue) DeleteStreamEntry(ctx context.Context, stream, id string) error {
+	return q.client.XDel(ctx, stream, id).Err()
+}
+
 // Publish serialises an Event and appends it to the named Redis Stream using
 // XADD. Fields: name, payload (JSON), trace_id.
 func (q *Queue) Publish(ctx context.Context, stream string, e provider.Event) error {

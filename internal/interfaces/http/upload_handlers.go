@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"archadilm/internal/application/upload"
+	"archadilm/internal/infrastructure/observability"
+	sentry "github.com/getsentry/sentry-go"
 )
 
 // UploadHandler handles POST /courses/:id/upload per
@@ -37,6 +39,7 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.svc == nil {
+		observability.CaptureMessage("Upload service unavailable", sentry.LevelWarning)
 		WriteError(w, http.StatusServiceUnavailable, "UPLOAD_DISABLED", "Upload service unavailable.")
 		return
 	}
@@ -76,6 +79,7 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 			traceID,
 		)
 		if err != nil {
+			observability.CaptureException(err)
 			notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
 			return
 		}
@@ -92,6 +96,7 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 		traceID,
 	)
 	if err != nil {
+		observability.CaptureException(err)
 		if strings.Contains(err.Error(), "unsupported file type") {
 			WriteError(w, http.StatusBadRequest, "UNSUPPORTED_FILE_TYPE",
 				"Supported: .pdf, .docx, .txt, .md, .srt, .vtt, or .zip")
@@ -154,6 +159,7 @@ func (h *UploadHandler) handleAddSource(w http.ResponseWriter, r *http.Request) 
 
 	result, err := h.svc.AddSource(r.Context(), claims.WorkspaceID, courseID, req.SourceType, req.URL, req.Content, req.Title)
 	if err != nil {
+		observability.CaptureException(err)
 		notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
 		return
 	}

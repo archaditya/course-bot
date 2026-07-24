@@ -22,6 +22,7 @@ import (
 	"archadilm/internal/config"
 	"archadilm/internal/infrastructure/id"
 	"archadilm/internal/infrastructure/llm"
+	"archadilm/internal/infrastructure/observability"
 	"archadilm/internal/infrastructure/postgres"
 	qdrantinfra "archadilm/internal/infrastructure/qdrant"
 	r2infra "archadilm/internal/infrastructure/r2"
@@ -34,6 +35,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("api: config error: %v", err)
 	}
+
+	// Initialize Sentry
+    if cfg.Sentry.DSN != "" {
+        if err := observability.InitSentry(cfg.Sentry.DSN, cfg.ServiceEnv); err != nil {
+            log.Printf("api: sentry init failed: %v", err)
+        }
+        defer observability.Flush()
+    }
 
 	db, err := postgres.Open(cfg.Database.URL)
 	if err != nil {
@@ -126,6 +135,18 @@ func main() {
 		UploadHandler:  httpapi.NewUploadHandler(uploadService),
 		ChatHandler:    httpapi.NewChatHandler(chatService),
 		StatusHandler:  statusHandler,
+
+		// Add health check dependencies
+		RedisClient: queue,
+		PostgresDB:  db,
+		AIClient:    aiClient,
+	}
+	// vectors is a possibly-nil *qdrantinfra.Store — assign only when non-nil,
+	// since storing a nil pointer in the pinger interface field would make
+	// the interface itself non-nil and Ping() would then panic on a nil
+	// receiver in handleHealthz.
+	if vectors != nil {
+		deps.QdrantClient = vectors
 	}
 	router := httpapi.NewRouter(deps)
 
@@ -157,4 +178,8 @@ func main() {
 		log.Fatalf("api: shutdown error: %v", err)
 	}
 	log.Println("api: shut down cleanly")
+
+	// Wrap router with Sentry handler
+    sentryHandler := observability.GetSentryHandler()
+    srv.Handler = sentryHandler.Handle(router)
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
@@ -10,10 +10,16 @@ import { useAuth } from '@/lib/auth-context';
 
 export default function SignupPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, isAuthenticated, isLoading } = useAuth();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.replace('/projects');
+    }
+  }, [isLoading, isAuthenticated, router]);
 
   const { mutate, isPending, error } = useMutation({
     mutationFn: async () => {
@@ -23,7 +29,7 @@ export default function SignupPage() {
     },
     onSuccess: (tokens) => {
       login(tokens);
-      router.push('/');
+      router.push('/projects');
     },
   });
 
