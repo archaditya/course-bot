@@ -25,6 +25,11 @@ type Config struct {
 	Providers    ProvidersConfig
 	Flags        FeatureFlags
 	ServiceEnv   string // local | staging | prod
+	AllowedURLDomains []string `env:"ALLOWED_URL_DOMAINS" envSeparator:","`
+
+	Sentry struct {
+		DSN string `env:"SENTRY_DSN"`
+	}
 }
 
 type DatabaseConfig struct {
@@ -144,6 +149,9 @@ func Load() (*Config, error) {
 			MaxEvaluatorRetries: maxRetries,
 		},
 	}
+
+	cfg.Sentry.DSN = os.Getenv("SENTRY_DSN")
+	
 	return cfg, nil
 }
 

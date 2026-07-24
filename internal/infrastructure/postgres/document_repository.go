@@ -82,3 +82,25 @@ func scanDocumentFields(s documentScanner) (*entities.Document, error) {
 	}
 	return &d, nil
 }
+
+func (r *documentRepository) SetNormalizedData(ctx context.Context, id string, data []byte, version string) error {
+	const query = `
+		UPDATE documents
+		SET normalized_data = $2, normalization_version = $3, updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := r.db.Exec(ctx, query, id, data, version)
+	return err
+}
+
+func (r *documentRepository) GetNormalizedData(ctx context.Context, id string) ([]byte, string, error) {
+	const query = `
+		SELECT normalized_data, normalization_version
+		FROM documents
+		WHERE id = $1
+	`
+	var data []byte
+	var version string
+	err := r.db.QueryRow(ctx, query, id).Scan(&data, &version)
+	return data, version, err
+}

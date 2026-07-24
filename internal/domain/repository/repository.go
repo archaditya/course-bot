@@ -79,6 +79,8 @@ type DocumentRepository interface {
 	GetByID(ctx context.Context, id string) (*entities.Document, error)
 	ListByCourse(ctx context.Context, courseID string) ([]*entities.Document, error)
 	SetNormalizedRef(ctx context.Context, id string, ref string, version string) error
+	SetNormalizedData(ctx context.Context, id string, data []byte, version string) error
+    GetNormalizedData(ctx context.Context, id string) ([]byte, string, error)
 }
 
 type ChunkRepository interface {
