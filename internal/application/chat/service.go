@@ -351,11 +351,15 @@ func (s *Service) Send(
 			StartTimestamp: c.StartTimestamp,
 			PageNumber:     c.PageNumber,
 		}
+		displayTitle := c.DocumentName
+		if displayTitle == "" {
+			displayTitle = c.Title
+		}
 		citResults[i] = CitationResult{
 			ChunkID:        c.ID,
 			DocumentID:     c.DocumentID,
 			StartTimestamp: c.StartTimestamp,
-			Title:          c.Title,
+			Title:          displayTitle,
 		}
 	}
 	if len(cits) > 0 {

@@ -871,7 +871,7 @@ export default function ChatPage() {
                         lineHeight: 1.4,
                       }}
                     >
-                      {selectedChunk.title || "Document Source"}
+                      {selectedChunk.document_name || selectedChunk.title || "Document Source"}
                     </h4>
                     {selectedChunk.start_timestamp != null && (
                       <span

@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"io"
 	"log"
 	"path/filepath"
@@ -88,6 +89,12 @@ func (s *Service) Upload(
 	sourceType, err := detectSourceType(filename)
 	if err != nil {
 		return nil, err
+	}
+
+		// Validate Magic Bytes / Content-Type binary header
+	detectedType := http.DetectContentType(data)
+	if strings.Contains(detectedType, "executable") || strings.Contains(detectedType, "x-dosexec") {
+		return nil, fmt.Errorf("upload: security error: malicious executable file header detected")
 	}
 
 	// Fetch course (validates workspace isolation)

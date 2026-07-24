@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiListCourses, apiCreateCourse, apiUpload, apiAddSource, Course } from '@/lib/api';
 import { Button, Badge, Spinner } from '@/design-system';
+import { validateMagicBytes } from '@/lib/security';
 
 interface SourceOption {
   id: string;
@@ -165,6 +166,11 @@ function SourceModal({ source, projectId, onClose, onSuccess }: { source: Source
       const course = await apiCreateCourse(projectId, courseTitle);
 
       if (source.inputType === 'file' && file) {
+        const isValid = await validateMagicBytes(file);
+        if (!isValid) {
+          alert("Security Error: File content binary header does not match file extension!");
+          return;
+        }
         await apiUpload(course.id, projectId, file);
       } else if (source.inputType === 'url') {
         const sourceType = source.id === 'video_url' ? 'video_url' : 'url';

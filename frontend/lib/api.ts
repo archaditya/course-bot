@@ -36,7 +36,7 @@ export function apiUpload(collectionId: string, projectId: string, file: File, o
 	const token = getToken(); const form = new FormData(); form.append('file', file); form.append('project_id', projectId);
 	return new Promise((resolve, reject) => { const xhr = new XMLHttpRequest(); xhr.open('POST', `${BASE}/collections/${collectionId}/upload`); if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`); xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(Math.round(event.loaded / event.total * 100)); }; xhr.onload = () => { if (xhr.status === 202) resolve(JSON.parse(xhr.responseText)); else reject(toApiError(xhr.status, xhr.responseText)); }; xhr.onerror = () => reject(new ApiError('Network error during upload', 0)); xhr.send(form); });
 }
-export interface AddSourceResult extends UploadResult {}
+export interface AddSourceResult extends UploadResult { }
 export async function apiAddSource(collectionId: string, sourceType: 'url' | 'text' | 'video_url', options: { url?: string; content?: string; title?: string }): Promise<AddSourceResult> { return request(`/collections/${collectionId}/sources`, { method: 'POST', body: { source_type: sourceType, ...options }, auth: true }); }
 export interface JobStatus { id: string; stage: string; status: string; attempts: number; last_error?: string }
 export interface CourseStatus { course_id: string; status: string; jobs: JobStatus[] }
@@ -53,7 +53,7 @@ export async function apiCreateConversation(projectId: string): Promise<Conversa
 export async function apiGetConversationMessages(conversationId: string): Promise<{ items: ConversationMessage[] }> {
 	return request(`/conversations/${conversationId}/messages`, { auth: true });
 }
-export interface ChunkDetail { id: string; document_id: string; content: string; title?: string; start_timestamp?: number; end_timestamp?: number; page_number?: number }
+export interface ChunkDetail { id: string; document_id: string; content: string; title?: string; start_timestamp?: number; end_timestamp?: number; page_number?: number; document_name?: string; }
 export async function apiGetChunk(chunkId: string): Promise<ChunkDetail> { return request(`/chunks/${chunkId}`, { auth: true }); }
 export async function apiHealth(): Promise<{ status: string }> { return request('/healthz'); }
 
