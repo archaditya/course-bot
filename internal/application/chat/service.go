@@ -106,8 +106,10 @@ func (s *Service) Send(
 	}
 	_ = conv
 
-	if _, err := s.courses.GetByID(ctx, ws, courseID); err != nil {
-		return nil, fmt.Errorf("chat: course access denied: %w", err)
+	if courseID != "" {
+		if _, err := s.courses.GetByID(ctx, ws, courseID); err != nil {
+			return nil, fmt.Errorf("chat: course access denied: %w", err)
+		}
 	}
 
 	userMsg := &entities.Message{
