@@ -10,6 +10,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.12.3
 	github.com/redis/go-redis/v9 v9.7.3
+	github.com/getsentry/sentry-go
 )
 
 require (
