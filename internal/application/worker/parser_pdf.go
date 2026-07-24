@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -15,11 +16,11 @@ import (
 // keeps the Go worker free of cgo/poppler dependencies while still getting
 // production-quality extraction including tables and OCR fallback.
 func parsePDF(rawData []byte, doc *entities.Document, aiClient *llm.Client) (*entities.NormalizedDocument, error) {
-	// Call AI Service to extract text from PDF
-	pages, err := aiClient.ExtractPDF(rawData)
-	if err != nil {
-		return nil, fmt.Errorf("pdf: ai service extraction: %w", err)
-	}
+    // Call AI Service to extract text from PDF
+    pages, err := aiClient.ExtractPDF(context.Background(), rawData)
+    if err != nil {
+        return nil, fmt.Errorf("pdf: ai service extraction: %w", err)
+    }
 
 	nd := &entities.NormalizedDocument{
 		Language:             "en",
