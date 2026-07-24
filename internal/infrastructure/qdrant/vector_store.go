@@ -70,18 +70,25 @@ func (s *Store) Upsert(ctx context.Context, points []provider.VectorPoint) error
 	return s.put(ctx, "/collections/"+s.collection+"/points?wait=true", body)
 }
 
-// Search performs a vector nearest-neighbour search filtered by course_id.
+// Search performs a vector nearest-neighbour search.
+// If courseID is provided, search is filtered by course_id.
+// Otherwise, search is performed across all vectors.
 func (s *Store) Search(ctx context.Context, courseID string, query provider.Vector, topK int) ([]provider.VectorSearchResult, error) {
-	body, _ := json.Marshal(map[string]any{
-		"vector": []float32(query),
-		"filter": map[string]any{
+	reqBody := map[string]any{
+		"vector":       []float32(query),
+		"limit":        topK,
+		"with_payload": false,
+	}
+
+	if courseID != "" {
+		reqBody["filter"] = map[string]any{
 			"must": []map[string]any{
 				{"key": "course_id", "match": map[string]any{"value": courseID}},
 			},
-		},
-		"limit":        topK,
-		"with_payload": false,
-	})
+		}
+	}
+
+	body, _ := json.Marshal(reqBody)
 	var resp struct {
 		Result []struct {
 			ID    string  `json:"id"`
