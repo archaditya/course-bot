@@ -265,10 +265,16 @@ func (s *Service) Send(
 	}
 	ranked = ranked[:topK]
 
+	seenContent := make(map[string]bool)
 	rankedChunks := make([]*entities.Chunk, 0, len(ranked))
 	for _, rc := range ranked {
 		if c, ok := chunkByID[rc.ChunkID]; ok {
-			rankedChunks = append(rankedChunks, c)
+			// Unique key using DocumentID + Content snippet
+			key := fmt.Sprintf("%s:%s", c.DocumentID, strings.TrimSpace(c.Content))
+			if !seenContent[key] {
+				seenContent[key] = true
+				rankedChunks = append(rankedChunks, c)
+			}
 		}
 	}
 
