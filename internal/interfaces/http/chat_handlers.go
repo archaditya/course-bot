@@ -111,11 +111,13 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Forward tokens as SSE events
 	for token := range tokenCh {
+		if token.Text != "" {
+			fmt.Fprintf(w, "data: %s\n\n", token.Text)
+			flusher.Flush()
+		}
 		if token.Done {
 			break
 		}
-		fmt.Fprintf(w, "data: %s\n\n", token.Text)
-		flusher.Flush()
 	}
 	<-done
 
