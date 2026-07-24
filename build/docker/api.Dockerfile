@@ -1,5 +1,5 @@
 # Step 1: Cache dependencies layer
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
 
 WORKDIR /app
 
