@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  BASE,
   apiGetProject,
   apiGetProjectCourses,
   apiListConversations,
@@ -185,7 +186,7 @@ export default function ChatPage() {
     try {
       const token = getToken();
       const response = await fetch(
-        `http://localhost:8080/conversations/${currentConvId}/messages`,
+        `${BASE}/conversations/${currentConvId}/messages`,
         {
           method: "POST",
           headers: {
