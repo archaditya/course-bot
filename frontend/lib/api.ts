@@ -42,7 +42,19 @@ export interface CourseStatus { course_id: string; status: string; jobs: JobStat
 export async function apiGetCourseStatus(id: string): Promise<CourseStatus> { return request(`/collections/${id}/status`, { auth: true }); }
 
 export interface Conversation { id: string; project_id: string; title: string; created_at: string }
+export interface ConversationMessage {
+	id: string;
+	role: 'user' | 'assistant';
+	content: string;
+	citations?: Array<{ chunk_id: string; document_id: string; start_timestamp?: number; title?: string }>;
+}
 export async function apiCreateConversation(projectId: string): Promise<Conversation> { return request('/conversations', { method: 'POST', body: { project_id: projectId }, auth: true }); }
+// NOTE: assumes the backend exposes GET /conversations/:id/messages next to the
+// existing POST /conversations/:id/messages (streaming) route. Confirm the exact
+// shape against the API before shipping — adjust the field names below if needed.
+export async function apiGetConversationMessages(conversationId: string): Promise<{ items: ConversationMessage[] }> {
+	return request(`/conversations/${conversationId}/messages`, { auth: true });
+}
 export interface ChunkDetail { id: string; document_id: string; content: string; title?: string; start_timestamp?: number; end_timestamp?: number; page_number?: number }
 export async function apiGetChunk(chunkId: string): Promise<ChunkDetail> { return request(`/chunks/${chunkId}`, { auth: true }); }
 export async function apiHealth(): Promise<{ status: string }> { return request('/healthz'); }
