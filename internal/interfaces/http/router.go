@@ -2,20 +2,25 @@ package http
 
 import (
     "context"
+    "database/sql"
     "encoding/json"
     "fmt"
     "log"
     "net/http"
     "time"
-    
-    goredis "github.com/redis/go-redis/v9"
-    "github.com/jackc/pgx/v5/pgxpool"
-    qdrant "github.com/qdrant/go-client/qdrant"
-    
+
     "archadilm/internal/infrastructure/llm"
     "archadilm/internal/infrastructure/observability"
-    "archadilm/internal/infrastructure/resilience"
 )
+
+// pinger is satisfied by any dependency that can report its own liveness —
+// *redis.Queue and *qdrant.Store both implement this; using the interface
+// here (rather than the external go-redis/pgx/qdrant-SDK client types,
+// none of which this project actually depends on) keeps /healthz decoupled
+// from any one backing implementation.
+type pinger interface {
+	Ping(ctx context.Context) error
+}
 
 const apiVersion = "0.1.0"
 
@@ -52,10 +57,10 @@ type Dependencies struct {
 	ChatHandler    *ChatHandler
 	StatusHandler  *StatusHandler
 
-	RedisClient    interface{} // *goredis.Client
-    PostgresDB     interface{} // *pgxpool.Pool
-    QdrantClient   interface{} // *qdrant.Client
-    AIClient       interface{} // *llm.Client
+	RedisClient  pinger      // *redis.Queue (infrastructure/redis)
+	PostgresDB   *sql.DB
+	QdrantClient pinger      // *qdrant.Store (infrastructure/qdrant)
+	AIClient     *llm.Client
 }
 
 func SecurityHeaders(next http.Handler) http.Handler {
@@ -171,7 +176,7 @@ func handleHealthz(deps Dependencies) http.HandlerFunc {
                     if deps.RedisClient == nil {
                         return fmt.Errorf("redis client not configured")
                     }
-                    return deps.RedisClient.(*goredis.Client).Ping(ctx).Err()
+                    return deps.RedisClient.Ping(ctx)
                 },
             },
             {
@@ -180,7 +185,7 @@ func handleHealthz(deps Dependencies) http.HandlerFunc {
                     if deps.PostgresDB == nil {
                         return fmt.Errorf("postgres not configured")
                     }
-                    return deps.PostgresDB.(*pgxpool.Pool).Ping(ctx).Err()
+                    return deps.PostgresDB.PingContext(ctx)
                 },
             },
             {
@@ -189,8 +194,7 @@ func handleHealthz(deps Dependencies) http.HandlerFunc {
                     if deps.QdrantClient == nil {
                         return fmt.Errorf("qdrant not configured")
                     }
-                    _, err := deps.QdrantClient.(*qdrant.Client).HealthCheck(ctx)
-                    return err
+                    return deps.QdrantClient.Ping(ctx)
                 },
             },
             {
@@ -199,9 +203,8 @@ func handleHealthz(deps Dependencies) http.HandlerFunc {
                     if deps.AIClient == nil {
                         return fmt.Errorf("ai service client not configured")
                     }
-                    // Check if circuit breaker is not open
-                    client := deps.AIClient.(*llm.Client)
-                    if client.embedCB.State() == resilience.StateOpen {
+                    // Check if any of the client's circuit breakers are open
+                    if !deps.AIClient.Healthy() {
                         return fmt.Errorf("circuit breaker open")
                     }
                     return nil

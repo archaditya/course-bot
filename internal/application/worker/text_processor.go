@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"archadilm/internal/domain/entities"
 	"archadilm/internal/domain/provider"
 	"archadilm/internal/domain/repository"
 	"archadilm/internal/infrastructure/llm"
+	"archadilm/internal/infrastructure/observability"
 )
 
 // TextProcessorWorker combines Parser and Chunker stages
@@ -106,46 +108,15 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
 	if err != nil {
 		return fmt.Errorf("text-processor: get document: %w", err)
 	}
-	
+
 	// Step 1: Extract text (was Parser)
-	var normalized *entities.NormalizedDocument
-	switch doc.SourceType {
-	case entities.SourceTypeSRT:
-		rawData, err := w.objects.Get(ctx, doc.StoragePath)
-		if err != nil {
-			return fmt.Errorf("text-processor: get raw file: %w", err)
-		}
-		normalized, err = parseSRT(rawData, doc)
-		if err != nil {
-			return fmt.Errorf("text-processor: srt: %w", err)
-		}
-	case entities.SourceTypeVTT:
-		rawData, err := w.objects.Get(ctx, doc.StoragePath)
-		if err != nil {
-			return fmt.Errorf("text-processor: get raw file: %w", err)
-		}
-		normalized, err = parseVTT(rawData, doc)
-		if err != nil {
-			return fmt.Errorf("text-processor: vtt: %w", err)
-		}
-	case entities.SourceTypeURL, entities.SourceTypeVideo:
-		normalized, err = parseURL(doc, w.aiClient, w.allowedURLDomains)
-		if err != nil {
-			return fmt.Errorf("text-processor: url: %w", err)
-		}
-	case entities.SourceTypeText:
-		rawData, err := w.objects.Get(ctx, doc.StoragePath)
-		if err != nil {
-			return fmt.Errorf("text-processor: get raw file: %w", err)
-		}
-		normalized, err = parseText(rawData, doc)
-		if err != nil {
-			return fmt.Errorf("text-processor: text: %w", err)
-		}
-	// ... handle other source types ...
-	default:
-		return fmt.Errorf("text-processor: unsupported source type %q", doc.SourceType)
+	parseStart := time.Now()
+	normalized, err := w.extractText(ctx, doc)
+	if err != nil {
+		observability.RecordError("parser")
+		return err
 	}
+	observability.RecordProcessingTime("parser", time.Since(parseStart))
 
 	// Store normalized in Postgres instead of R2
     data, err := json.Marshal(normalized)
@@ -158,7 +129,9 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
     }
 	
 	// Step 2: Chunk immediately (was Chunker)
+	chunkStart := time.Now()
 	chunks := w.slidingWindowChunk(normalized.Segments, courseID, docID)
+	observability.RecordProcessingTime("chunker", time.Since(chunkStart))
 	
 	// Step 3: Store chunks in Postgres (skip R2 intermediate)
 	chunkPtrs := make([]*entities.Chunk, len(chunks))
@@ -197,6 +170,52 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
 		},
 		TraceID: traceID,
 	})
+}
+
+// extractText normalizes a document's raw source into segments, dispatching
+// on source type. This is the "Parser" stage of the pipeline.
+func (w *TextProcessorWorker) extractText(ctx context.Context, doc *entities.Document) (*entities.NormalizedDocument, error) {
+	switch doc.SourceType {
+	case entities.SourceTypeSRT:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: get raw file: %w", err)
+		}
+		normalized, err := parseSRT(rawData, doc)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: srt: %w", err)
+		}
+		return normalized, nil
+	case entities.SourceTypeVTT:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: get raw file: %w", err)
+		}
+		normalized, err := parseVTT(rawData, doc)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: vtt: %w", err)
+		}
+		return normalized, nil
+	case entities.SourceTypeURL, entities.SourceTypeVideo:
+		normalized, err := parseURL(doc, w.aiClient, w.allowedURLDomains)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: url: %w", err)
+		}
+		return normalized, nil
+	case entities.SourceTypeText:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: get raw file: %w", err)
+		}
+		normalized, err := parseText(rawData, doc)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: text: %w", err)
+		}
+		return normalized, nil
+	// ... handle other source types ...
+	default:
+		return nil, fmt.Errorf("text-processor: unsupported source type %q", doc.SourceType)
+	}
 }
 
 func (w *TextProcessorWorker) slidingWindowChunk(segs []entities.Segment, courseID, docID string) []entities.Chunk {

@@ -137,10 +137,16 @@ func main() {
 		StatusHandler:  statusHandler,
 
 		// Add health check dependencies
-		RedisClient:  queue.(*redisinfra.Queue).Client(),
-		PostgresDB:   db,
-		QdrantClient: vectors.(*qdrantinfra.Store).Client(),
-		AIClient:     aiClient,
+		RedisClient: queue,
+		PostgresDB:  db,
+		AIClient:    aiClient,
+	}
+	// vectors is a possibly-nil *qdrantinfra.Store — assign only when non-nil,
+	// since storing a nil pointer in the pinger interface field would make
+	// the interface itself non-nil and Ping() would then panic on a nil
+	// receiver in handleHealthz.
+	if vectors != nil {
+		deps.QdrantClient = vectors
 	}
 	router := httpapi.NewRouter(deps)
 
