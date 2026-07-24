@@ -85,17 +85,6 @@ func (w *ManifestWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 	if err := w.jobs.Update(ctx, job); err != nil {
 		log.Printf("manifest: save job %s: %v", job.ID, err)
 	}
-
-	// Publish to new stream
-    w.queue.Publish(ctx, "pipeline:manifest", provider.Event{
-        Name: "MANIFEST_READY",
-        Payload: map[string]any{
-            "course_id":    courseID,
-            "document_id":  documentID,
-            "job_id":       parserJobID,
-        },
-        TraceID: qe.TraceID,
-    })
 }
 
 func payloadStrings(value any) []string {

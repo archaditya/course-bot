@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"archadilm/internal/domain/entities"
 	"archadilm/internal/domain/provider"
 	"archadilm/internal/domain/repository"
 	"archadilm/internal/infrastructure/llm"
+	"archadilm/internal/infrastructure/observability"
 )
 
 // IndexerWorker combines Metadata and Embedding stages
@@ -111,11 +113,14 @@ func (w *IndexerWorker) process(ctx context.Context, courseID, chunksJSON, trace
 	}
 	
 	// Step 1: Add metadata (local, no AI call)
+	metadataStart := time.Now()
 	for i := range chunks {
 		chunks[i].Title, chunks[i].Summary = localMetadata(chunks[i].Content)
 	}
+	observability.RecordProcessingTime("metadata", time.Since(metadataStart))
 	
 	// Step 2: Batch embeddings
+	embeddingStart := time.Now()
 	texts := make([]string, len(chunks))
 	for i, c := range chunks {
 		texts[i] = c.Content
@@ -123,11 +128,14 @@ func (w *IndexerWorker) process(ctx context.Context, courseID, chunksJSON, trace
 	
 	vecs, err := w.aiClient.Embed(ctx, texts)
 	if err != nil {
+		observability.RecordError("embedding")
 		return fmt.Errorf("indexer: embed: %w", err)
 	}
 	if len(vecs) != len(chunks) {
+		observability.RecordError("embedding")
 		return fmt.Errorf("indexer: expected %d vectors, got %d", len(chunks), len(vecs))
 	}
+	observability.RecordProcessingTime("embedding", time.Since(embeddingStart))
 	
 	// Step 3: Build Qdrant points
 	points := make([]provider.VectorPoint, len(chunks))

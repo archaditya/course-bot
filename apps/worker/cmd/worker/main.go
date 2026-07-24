@@ -76,20 +76,20 @@ func main() {
 	ids := id.UUIDGenerator{}
 
 	// ── Wire workers ──────────────────────────────────────────────────────
-	jobStore := redisinfra.NewJobStore(queue.(*redisinfra.Queue).Client())
- 
+	jobStore := redisinfra.NewJobStore(queue.Client())
+
 	textProcessorWorker := worker.NewTextProcessorWorker(
 		courses, jobs, documents, objects, queue, ids, aiClient, cfg.AllowedURLDomains,
 	)
-	textProcessorWorker.jobStore = jobStore
-	
+	textProcessorWorker.SetJobStore(jobStore)
+
 	indexerWorker := worker.NewIndexerWorker(
 		courses, jobs, chunks, vectors, queue, ids, aiClient,
 	)
-	indexerWorker.jobStore = jobStore
-	
+	indexerWorker.SetJobStore(jobStore)
+
 	manifestWorker := worker.NewManifestWorker(courses, jobs, documents, queue, ids)
-	manifestWorker.jobStore = jobStore
+	manifestWorker.SetJobStore(jobStore)
 
 	// ── Start all stages ──────────────────────────────────────────────────
 	ctx, cancel := context.WithCancel(context.Background())
@@ -97,11 +97,7 @@ func main() {
 
 	errs := make(chan error, 5)
 	go func() { errs <- manifestWorker.Run(ctx) }()
-	// go func() { errs <- parserWorker.Run(ctx) }()
-	// go func() { errs <- chunkWorker.Run(ctx) }()
 	go func() { errs <- textProcessorWorker.Run(ctx) }()
-	// go func() { errs <- metadataWorker.Run(ctx) }()
-	// go func() { errs <- embeddingWorker.Run(ctx) }()
 	go func() { errs <- indexerWorker.Run(ctx) }()
 
 	log.Printf("worker: all pipeline stages started (env=%s, ai-service=%s)",

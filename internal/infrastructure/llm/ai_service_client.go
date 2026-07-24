@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"archadilm/internal/domain/provider"
+	"archadilm/internal/infrastructure/observability"
 	"archadilm/internal/infrastructure/resilience"
 )
 
@@ -30,6 +31,34 @@ type Client struct {
     rerankCB     *resilience.CircuitBreaker
     evaluateCB   *resilience.CircuitBreaker
     guardrailCB  *resilience.CircuitBreaker
+}
+
+// callWithMetrics runs fn through the given circuit breaker and records the
+// call's latency/outcome in observability.GlobalMetrics — this is the single
+// place all AI-service calls (embed, extract, generate, rerank, evaluate,
+// guardrail) funnel through, so /metrics reflects real traffic instead of
+// always reading zero.
+func (c *Client) callWithMetrics(ctx context.Context, cb *resilience.CircuitBreaker, fn func() error) error {
+	start := time.Now()
+	err := cb.Execute(ctx, fn)
+	observability.RecordAIServiceCall(time.Since(start), err)
+	return err
+}
+
+// Healthy reports whether the client's circuit breakers are all closed
+// (i.e. the AI Service is not currently being treated as failing). Used by
+// the API's /healthz check — kept as a method rather than exposing the
+// breaker fields directly, since those are internal implementation detail.
+func (c *Client) Healthy() bool {
+	breakers := []*resilience.CircuitBreaker{
+		c.embedCB, c.extractCB, c.generateCB, c.rerankCB, c.evaluateCB, c.guardrailCB,
+	}
+	for _, cb := range breakers {
+		if cb != nil && cb.State() == resilience.StateOpen {
+			return false
+		}
+	}
+	return true
 }
 
 // Compile-time interface assertions.
@@ -69,7 +98,7 @@ type embeddingResponse struct {
 
 func (c *Client) Embed(ctx context.Context, texts []string) ([]provider.Vector, error) {
     var resp embeddingResponse
-    err := c.embedCB.Execute(ctx, func() error {
+    err := c.callWithMetrics(ctx, c.embedCB, func() error {
         return c.postJSON(ctx, "/embeddings", embeddingRequest{Texts: texts}, &resp)
     })
     
@@ -116,7 +145,7 @@ func (c *Client) Rerank(ctx context.Context, query string, candidates []provider
     }
  
     var resp rerankResponse
-    err := c.rerankCB.Execute(ctx, func() error {
+    err := c.callWithMetrics(ctx, c.rerankCB, func() error {
         return c.postJSON(ctx, "/rerank", rerankRequest{
             Query:      query,
             Candidates: chunks,
@@ -162,7 +191,7 @@ func (c *Client) Generate(ctx context.Context, prompt provider.Prompt) (provider
     }
  
     var resp generationResponse
-    err := c.generateCB.Execute(ctx, func() error {
+    err := c.callWithMetrics(ctx, c.generateCB, func() error {
         return c.postJSON(ctx, "/generate", generationRequest{
             Query:         query,
             Context:       prompt.System,
@@ -256,7 +285,7 @@ type evaluationResponse struct {
 func (c *Client) Evaluate(ctx context.Context, query string, response string, groundingChunks []string) (int, string, error) {
     context_ := strings.Join(groundingChunks, "\n---\n")
     var resp evaluationResponse
-    err := c.evaluateCB.Execute(ctx, func() error {
+    err := c.callWithMetrics(ctx, c.evaluateCB, func() error {
         return c.postJSON(ctx, "/evaluate", evaluationRequest{
             Query:         query,
             Response:      response,
@@ -292,7 +321,7 @@ type guardrailResponse struct {
 
 func (c *Client) CheckInjection(ctx context.Context, text string) (provider.InjectionResult, error) {
     var resp guardrailResponse
-    err := c.guardrailCB.Execute(ctx, func() error {
+    err := c.callWithMetrics(ctx, c.guardrailCB, func() error {
         return c.postJSON(ctx, "/guardrails/check", guardrailRequest{Text: text}, &resp)
     })
     
@@ -310,7 +339,7 @@ func (c *Client) CheckInjection(ctx context.Context, text string) (provider.Inje
 
 func (c *Client) CheckPII(ctx context.Context, text string) (provider.PIIResult, error) {
     var resp guardrailResponse
-    err := c.guardrailCB.Execute(ctx, func() error {
+    err := c.callWithMetrics(ctx, c.guardrailCB, func() error {
         return c.postJSON(ctx, "/guardrails/check", guardrailRequest{Text: text}, &resp)
     })
     
@@ -461,7 +490,7 @@ func (c *Client) ExtractPDF(ctx context.Context, pdfData []byte) ([]PDFPage, err
         Pages []PDFPage `json:"pages"`
     }
  
-    err := c.extractCB.Execute(ctx, func() error {
+    err := c.callWithMetrics(ctx, c.extractCB, func() error {
         var buf bytes.Buffer
         writer := multipart.NewWriter(&buf)
         
@@ -572,7 +601,7 @@ func (c *Client) ExtractURL(ctx context.Context, targetURL string, allowedDomain
     }
  
     var resp URLExtraction
-    err = c.extractCB.Execute(ctx, func() error {
+    err = c.callWithMetrics(ctx, c.extractCB, func() error {
         return c.postJSON(ctx, "/extract-url", extractURLRequest{URL: targetURL}, &resp)
     })
  
