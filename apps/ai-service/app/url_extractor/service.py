@@ -5,6 +5,7 @@ import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi
+from config.settings import settings
 
 
 class URLSection(BaseModel):
@@ -18,7 +19,7 @@ class URLExtractionResult(BaseModel):
 
 
 class URLExtractorService:
-    """Fetches a web page or YouTube video transcript and extracts readable text content."""
+    """Fetches web pages or YouTube video transcripts using Official YouTube API / Web Scraper."""
 
     NOISE_TAGS = {"nav", "footer", "header", "aside", "script", "style", "noscript", "iframe"}
     NOISE_CLASSES = {"sidebar", "navigation", "nav", "footer", "header", "ad", "advertisement", "menu", "cookie"}
@@ -37,26 +38,50 @@ class URLExtractorService:
         return None
 
     async def _extract_youtube(self, video_id: str, original_url: str) -> URLExtractionResult:
-        """Extracts title and timestamped transcript from YouTube videos using YouTubeTranscriptApi."""
+        """Extracts title and transcript from YouTube videos using Official API + Transcript fallback."""
         title = f"YouTube Video ({video_id})"
+        sections: List[URLSection] = []
 
-        # 1. Try fetching video title via YouTube oEmbed API
-        try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                resp = await client.get(f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    title = data.get("title", title)
-        except Exception:
-            pass
+        # 1. Fetch Official Video Title & Description using YouTube Data API v3 if API key is provided
+        yt_api_key = getattr(settings, "youtube_api_key", None) or getattr(settings, "YOUTUBE_API_KEY", None)
+        if yt_api_key:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={yt_api_key}"
+                    resp = await client.get(api_url)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        items = data.get("items", [])
+                        if items:
+                            snippet = items[0].get("snippet", {})
+                            title = snippet.get("title", title)
+                            desc = snippet.get("description", "").strip()
+                            if desc:
+                                sections.append(
+                                    URLSection(
+                                        heading=f"Video Overview: {title}",
+                                        text=f"Video Title: {title}\nURL: {original_url}\nDescription:\n{desc[:2500]}",
+                                    )
+                                )
+            except Exception as e:
+                print(f"YouTube Data API v3 fetch failed: {e}")
 
-        # 2. Extract transcript using YouTubeTranscriptApi instance
+        # 2. Fallback Title via oEmbed if API key is missing/failed
+        if title.startswith("YouTube Video"):
+            try:
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    resp = await client.get(f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json")
+                    if resp.status_code == 200:
+                        title = resp.json().get("title", title)
+            except Exception:
+                pass
+
+        # 3. Extract Transcript Subtitles
         try:
             ytt = YouTubeTranscriptApi()
             fetched = ytt.fetch(video_id, languages=["en", "en-US", "hi"])
 
             if fetched:
-                sections: List[URLSection] = []
                 chunk_text: List[str] = []
                 chunk_start_ts = "00:00"
 
@@ -73,7 +98,6 @@ class URLExtractorService:
                     if text_str:
                         chunk_text.append(text_str)
 
-                    # Group transcript into ~800 character sections with timestamp headers
                     if len(" ".join(chunk_text)) > 800 or i == len(fetched) - 1:
                         section_content = " ".join(chunk_text).strip()
                         if section_content:
@@ -85,13 +109,14 @@ class URLExtractorService:
                             )
                         chunk_text = []
 
-                if sections:
-                    return URLExtractionResult(title=title, sections=sections)
-
         except Exception as e:
-            print(f"YouTube transcript extraction failed for {video_id}: {e}")
+            print(f"YouTube transcript extraction notice for {video_id}: {e}")
 
-        return URLExtractionResult(title=title, sections=[])
+        # If transcript is empty and no description section was extracted
+        if not sections:
+            raise Exception(f"Could not retrieve transcript for YouTube video ({video_id}). Please check video subtitles or proxy configuration.")
+
+        return URLExtractionResult(title=title, sections=sections)
 
     async def extract(self, url: str) -> URLExtractionResult:
         # Check if URL is a YouTube Video
@@ -103,14 +128,11 @@ class URLExtractorService:
 
         # Standard Web Page Scraper Fallback
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(url, headers={
-                "User-Agent": "archadiLM/1.0 (course-material-indexer)"
-            })
+            response = await client.get(url, headers={"User-Agent": "archadiLM/1.0 (course-material-indexer)"})
             response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Remove noise elements
         for tag_name in self.NOISE_TAGS:
             for tag in soup.find_all(tag_name):
                 tag.decompose()
@@ -122,7 +144,6 @@ class URLExtractorService:
 
         title = soup.title.string.strip() if soup.title and soup.title.string else url
 
-        # Extract text by sections (headings + their content)
         sections: List[URLSection] = []
         current_heading = None
         current_text: list[str] = []
@@ -133,7 +154,6 @@ class URLExtractorService:
 
         for element in content_area.descendants:
             if element.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
-                # Flush previous section
                 if current_text:
                     text = " ".join(current_text).strip()
                     if text:
@@ -142,14 +162,12 @@ class URLExtractorService:
                 current_text = []
             elif element.name in {"p", "li", "td", "blockquote", "pre", "code"}:
                 text = element.get_text(strip=True)
-                if text and len(text) > 10:  # filter out tiny fragments
+                if text and len(text) > 10:
                     current_text.append(text)
 
-        # Flush last section
         if current_text:
             text = " ".join(current_text).strip()
             if text:
                 sections.append(URLSection(text=text, heading=current_heading))
 
         return URLExtractionResult(title=title, sections=sections)
-

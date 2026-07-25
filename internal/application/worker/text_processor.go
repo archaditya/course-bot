@@ -118,7 +118,15 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
 	}
 	observability.RecordProcessingTime("parser", time.Since(parseStart))
 
-	// Store normalized in Postgres instead of R2
+	// Update document original filename in Postgres if parser extracted a clean title (e.g. YouTube Video Title)
+	if normalized.Metadata.OriginalFilename != "" && normalized.Metadata.OriginalFilename != doc.OriginalFilename {
+		doc.OriginalFilename = normalized.Metadata.OriginalFilename
+		if err := w.documents.UpdateOriginalFilename(ctx, docID, normalized.Metadata.OriginalFilename); err != nil {
+			log.Printf("text-processor: update document title error: %v", err)
+		}
+	}
+
+	// Store normalized data in Postgres
 	data, err := json.Marshal(normalized)
 	if err != nil {
 		return fmt.Errorf("text-processor: marshal: %w", err)

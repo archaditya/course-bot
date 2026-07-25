@@ -776,7 +776,7 @@ export default function ChatPage() {
                                     whiteSpace: "nowrap",
                                   }}
                                 >
-                                  {c.title || `Source ${i + 1}`}
+                                  {c.title ? c.title.replace(/^\d+[\.\-_]\s*/, "").replace(/\.(vtt|srt|mp4|pdf|docx|txt)$/i, "") : `Source ${i + 1}`}
                                 </p>
                                 {c.start_timestamp != null && (
                                   <span

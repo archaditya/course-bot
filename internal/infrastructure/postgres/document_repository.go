@@ -104,3 +104,13 @@ func (r *documentRepository) GetNormalizedData(ctx context.Context, id string) (
 	err := r.db.QueryRowContext(ctx, query, id).Scan(&data, &version)
 	return data, version, err
 }
+
+func (r *documentRepository) UpdateOriginalFilename(ctx context.Context, id string, filename string) error {
+	const query = `
+		UPDATE documents
+		SET original_filename = $2, updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := r.db.ExecContext(ctx, query, id, filename)
+	return err
+}

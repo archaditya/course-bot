@@ -81,6 +81,7 @@ type DocumentRepository interface {
 	SetNormalizedRef(ctx context.Context, id string, ref string, version string) error
 	SetNormalizedData(ctx context.Context, id string, data []byte, version string) error
     GetNormalizedData(ctx context.Context, id string) ([]byte, string, error)
+	UpdateOriginalFilename(ctx context.Context, id string, filename string) error
 }
 
 type ChunkRepository interface {

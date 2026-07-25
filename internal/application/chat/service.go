@@ -242,24 +242,32 @@ func (s *Service) Send(
 	}
 
 	// ── Step 8: Rerank ────────────────────────────────────────────────────
-	candidates := make([]provider.RerankCandidate, 0, len(mergedResults))
-	for _, r := range mergedResults {
-		if c, ok := chunkByID[r.ChunkID]; ok {
-			candidates = append(candidates, provider.RerankCandidate{
-				ChunkID:    c.ID,
-				DocumentID: c.DocumentID,
-				Content:    c.Content,
-			})
-		}
+	// To gain some speed, bypass reranker and use RRF order
+	// candidates := make([]provider.RerankCandidate, 0, len(mergedResults))
+	// for _, r := range mergedResults {
+	// 	if c, ok := chunkByID[r.ChunkID]; ok {
+	// 		candidates = append(candidates, provider.RerankCandidate{
+	// 			ChunkID:    c.ID,
+	// 			DocumentID: c.DocumentID,
+	// 			Content:    c.Content,
+	// 		})
+	// 	}
+	// }
+
+	// ranked, err := s.aiClient.Rerank(ctx, userContent, candidates)
+	// if err != nil {
+	// 	log.Printf("chat: rerank failed (using RRF order): %v", err)
+	// 	ranked = make([]provider.RankedChunk, len(mergedResults))
+	// 	for i, r := range mergedResults {
+	// 		ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
+	// 	}
+	// }
+	// ── Step 8: Qdrant RRF Ranking (Fast In-Memory Order) ───────────────
+	ranked := make([]provider.RankedChunk, len(mergedResults))
+	for i, r := range mergedResults {
+		ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
 	}
-	ranked, err := s.aiClient.Rerank(ctx, userContent, candidates)
-	if err != nil {
-		log.Printf("chat: rerank failed (using RRF order): %v", err)
-		ranked = make([]provider.RankedChunk, len(mergedResults))
-		for i, r := range mergedResults {
-			ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
-		}
-	}
+
 
 	topK := 5
 	if len(ranked) < topK {
@@ -317,11 +325,12 @@ func (s *Service) Send(
 			}
 		}
 
-		score, _, err := s.evaluator.Evaluate(ctx, userContent, fullContent, []string{context_})
-		if err != nil {
-			log.Printf("chat: evaluate: %v", err)
-			score = 8
-		}
+		// score, _, err := s.evaluator.Evaluate(ctx, userContent, fullContent, []string{context_})
+		score := 8
+		// if err != nil {
+		// 	log.Printf("chat: evaluate: %v", err)
+		// 	score = 8
+		// }
 
 		if score > bestScore {
 			bestScore = score
