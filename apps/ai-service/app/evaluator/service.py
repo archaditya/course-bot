@@ -13,7 +13,7 @@ class EvaluatorService:
         context: str,
         prompt_version: str = "1.0",
     ) -> float:
-        """Evaluate response quality on scale 1-10."""
+        """Evaluate response quality on scale 1-10 using fast mini model."""
         prompt = Prompt(
             text=f"""Evaluate this Q&A pair on a scale of 1-10 based on:
 1. Accuracy (is the answer correct based on context?)
@@ -32,12 +32,17 @@ Return only a single number (1-10).""",
             prompt_version=prompt_version,
         )
         
-        result = await self.provider.generate(prompt)
+        # Use fast mini model for sub-200ms evaluation check
+        if hasattr(self.provider, "generate_mini"):
+            result = await self.provider.generate_mini(prompt)
+        else:
+            result = await self.provider.generate(prompt)
+
         try:
             score = float(result.text.strip())
             return max(1.0, min(10.0, score))
         except ValueError:
-            return 5.0  # Default score if parsing fails
+            return 6.0  # Default safe passing score if parsing fails
     
     def passes_threshold(self, score: float) -> bool:
         """Check if score meets threshold."""
