@@ -290,7 +290,7 @@ export default function SignupPage() {
             fontWeight: 600,
             cursor: isPending ? 'not-allowed' : 'pointer',
             opacity: isPending ? 0.7 : 1,
-            boxShadow: '0 4px 20px rgba(192,193,255,0.2)',
+            boxShadow: '0 4px 20px rgba(217,164,65,0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

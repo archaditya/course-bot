@@ -38,7 +38,7 @@ export default function LandingPage() {
             left: '30%',
             width: '700px',
             height: '600px',
-            background: 'radial-gradient(circle, rgba(192,193,255,0.25) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(217,164,65,0.25) 0%, transparent 70%)',
           }}
         />
         <div
@@ -49,7 +49,7 @@ export default function LandingPage() {
             right: '-5%',
             width: '450px',
             height: '450px',
-            background: 'radial-gradient(circle, rgba(78,222,163,0.15) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(127,199,154,0.15) 0%, transparent 70%)',
             animationDelay: '-6s',
           }}
         />
@@ -61,7 +61,7 @@ export default function LandingPage() {
             left: '-5%',
             width: '400px',
             height: '400px',
-            background: 'radial-gradient(circle, rgba(160,120,255,0.12) 0%, transparent 70%)',
+            background: 'radial-gradient(circle, rgba(127,168,255,0.12) 0%, transparent 70%)',
             animationDelay: '-3s',
           }}
         />
@@ -99,7 +99,7 @@ export default function LandingPage() {
             }}
           >
             <span className="material-symbols-outlined" style={{ color: 'var(--color-on-primary)', fontSize: '20px' }}>
-              memory
+              auto_stories
             </span>
           </div>
           <span
@@ -159,7 +159,7 @@ export default function LandingPage() {
               fontSize: '12px',
               fontWeight: 600,
               letterSpacing: '0.05em',
-              boxShadow: '0 4px 20px rgba(192,193,255,0.25)',
+              boxShadow: '0 4px 20px rgba(217,164,65,0.25)',
               transition: 'all 0.2s',
               display: 'inline-block',
             }}
@@ -222,7 +222,7 @@ export default function LandingPage() {
                   textTransform: 'uppercase',
                 }}
               >
-                Now with GPT-4o Integration
+                Every answer cites its source
               </span>
             </div>
           </motion.div>
@@ -280,7 +280,7 @@ export default function LandingPage() {
                 fontFamily: 'var(--font-geist)',
                 fontSize: '16px',
                 fontWeight: 600,
-                boxShadow: '0 8px 30px rgba(192,193,255,0.3)',
+                boxShadow: '0 8px 30px rgba(217,164,65,0.3)',
                 transition: 'all 0.2s',
                 display: 'inline-block',
               }}
@@ -333,7 +333,7 @@ export default function LandingPage() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                background: 'linear-gradient(135deg, rgba(192,193,255,0.04) 0%, transparent 60%)',
+                background: 'linear-gradient(135deg, rgba(217,164,65,0.04) 0%, transparent 60%)',
                 pointerEvents: 'none',
               }}
             />
@@ -367,7 +367,7 @@ export default function LandingPage() {
                       style={{
                         padding: '8px 12px',
                         borderRadius: '8px',
-                        background: 'rgba(192,193,255,0.05)',
+                        background: 'rgba(217,164,65,0.05)',
                         border: '1px solid rgba(255,255,255,0.05)',
                         marginBottom: '8px',
                         fontSize: '12px',
@@ -413,7 +413,7 @@ export default function LandingPage() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(192,193,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(217,164,65,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <span className="material-symbols-outlined" style={{ fontSize: '12px', color: 'var(--color-primary)' }}>bolt</span>
                       </div>
                       <span style={{ fontSize: '10px', color: 'var(--color-secondary)', fontFamily: 'var(--font-geist)', fontWeight: 600 }}>AI Answer • High Confidence</span>
@@ -433,7 +433,7 @@ export default function LandingPage() {
                 left: '32px',
                 padding: '12px 16px',
                 borderRadius: '12px',
-                border: '1px solid rgba(192,193,255,0.2)',
+                border: '1px solid rgba(217,164,65,0.2)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
@@ -555,8 +555,8 @@ export default function LandingPage() {
               width: '72px',
               height: '72px',
               borderRadius: '50%',
-              background: 'rgba(0,165,114,0.12)',
-              border: '1px solid rgba(78,222,163,0.3)',
+              background: 'rgba(71,121,224,0.12)',
+              border: '1px solid rgba(127,199,154,0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -596,7 +596,7 @@ export default function LandingPage() {
           <div
             style={{
               padding: '12px',
-              background: 'rgba(45,52,73,0.4)',
+              background: 'rgba(35,38,47,0.4)',
               borderRadius: '8px',
               border: '1px solid var(--color-outline-variant)',
               fontFamily: 'var(--font-inter)',
@@ -637,7 +637,7 @@ export default function LandingPage() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                background: 'linear-gradient(135deg, rgba(192,193,255,0.3), rgba(78,222,163,0.3))',
+                background: 'linear-gradient(135deg, rgba(217,164,65,0.3), rgba(127,199,154,0.3))',
                 borderRadius: '50%',
                 filter: 'blur(20px)',
                 animation: 'aura-pulse 4s ease-in-out infinite',
@@ -685,7 +685,7 @@ export default function LandingPage() {
             width: '100%',
             borderRadius: '48px',
             padding: '64px 48px',
-            border: '1px solid rgba(192,193,255,0.15)',
+            border: '1px solid rgba(217,164,65,0.15)',
             position: 'relative',
             overflow: 'hidden',
           }}
@@ -697,7 +697,7 @@ export default function LandingPage() {
               right: '-60px',
               width: '200px',
               height: '200px',
-              background: 'rgba(192,193,255,0.08)',
+              background: 'rgba(217,164,65,0.08)',
               borderRadius: '50%',
               filter: 'blur(40px)',
             }}
@@ -719,7 +719,7 @@ export default function LandingPage() {
                 fontFamily: 'var(--font-geist)',
                 fontSize: '16px',
                 fontWeight: 600,
-                boxShadow: '0 8px 30px rgba(192,193,255,0.25)',
+                boxShadow: '0 8px 30px rgba(217,164,65,0.25)',
                 transition: 'all 0.2s',
               }}
             >

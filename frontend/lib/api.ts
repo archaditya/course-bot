@@ -53,7 +53,18 @@ export async function apiCreateConversation(projectId: string): Promise<Conversa
 export async function apiGetConversationMessages(conversationId: string): Promise<{ items: ConversationMessage[] }> {
 	return request(`/conversations/${conversationId}/messages`, { auth: true });
 }
-export interface ChunkDetail { id: string; document_id: string; content: string; title?: string; start_timestamp?: number; end_timestamp?: number; page_number?: number; document_name?: string; }
+export interface ChunkDetail {
+  id: string;
+  document_id: string;
+  content: string;
+  title?: string;
+  start_timestamp?: number;
+  end_timestamp?: number;
+  page_number?: number;
+  document_name?: string;
+  source_type?: string;
+  source_url?: string;
+}
 export async function apiGetChunk(chunkId: string): Promise<ChunkDetail> { return request(`/chunks/${chunkId}`, { auth: true }); }
 export async function apiHealth(): Promise<{ status: string }> { return request('/healthz'); }
 

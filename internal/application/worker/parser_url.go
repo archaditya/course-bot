@@ -28,8 +28,13 @@ func parseURL(doc *entities.Document, aiClient *llm.Client, allowedDomains []str
 		NormalizationVersion: NormalizationVersion,
 	}
 	nd.Metadata.SourceType = doc.SourceType
-	nd.Metadata.OriginalFilename = doc.OriginalFilename
 	nd.Metadata.Checksum = doc.Checksum
+
+	if extracted.Title != "" && extracted.Title != doc.SourceURL {
+		nd.Metadata.OriginalFilename = extracted.Title
+	} else {
+		nd.Metadata.OriginalFilename = doc.OriginalFilename
+	}
 
 	// Split extracted content into segments by paragraph/section.
 	// The AI Service returns pre-segmented content.

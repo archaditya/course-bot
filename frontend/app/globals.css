@@ -1,69 +1,84 @@
 @import "tailwindcss";
 
-/* ── Tailwind v4 Theme ────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   MARGINALIA — design tokens for archadiLM
+   A researcher's notebook, not a chat-bot glow. Dark "ink" surfaces, a single
+   warm "highlighter" accent reserved for citations & primary actions, and a
+   serif reading face for grounded answers so long output reads like prose,
+   not UI chrome.
+   ══════════════════════════════════════════════════════════════════════════ */
 @theme {
-  /* Cognitive Workspace Palette */
-  --color-background:                #0b1326;
-  --color-surface:                   #0b1326;
-  --color-surface-dim:               #0b1326;
-  --color-surface-bright:            #31394d;
-  --color-surface-container-lowest:  #060e20;
-  --color-surface-container-low:     #131b2e;
-  --color-surface-container:         #171f33;
-  --color-surface-container-high:    #222a3d;
-  --color-surface-container-highest: #2d3449;
-  --color-surface-variant:           #2d3449;
-  --color-on-surface:                #dae2fd;
-  --color-on-surface-variant:        #c7c4d7;
-  --color-inverse-surface:           #dae2fd;
-  --color-inverse-on-surface:        #283044;
-  --color-outline:                   #908fa0;
-  --color-outline-variant:           #464554;
-  --color-surface-tint:              #c0c1ff;
-  --color-primary:                   #c0c1ff;
-  --color-on-primary:                #1000a9;
-  --color-primary-container:         #8083ff;
-  --color-on-primary-container:      #0d0096;
-  --color-inverse-primary:           #494bd6;
-  --color-primary-fixed:             #e1e0ff;
-  --color-primary-fixed-dim:         #c0c1ff;
-  --color-on-primary-fixed:          #07006c;
-  --color-on-primary-fixed-variant:  #2f2ebe;
-  --color-secondary:                 #4edea3;
-  --color-on-secondary:              #003824;
-  --color-secondary-container:       #00a572;
-  --color-on-secondary-container:    #00311f;
-  --color-secondary-fixed:           #6ffbbe;
-  --color-secondary-fixed-dim:       #4edea3;
-  --color-on-secondary-fixed:        #002113;
-  --color-on-secondary-fixed-variant: #005236;
-  --color-tertiary:                  #d0bcff;
-  --color-on-tertiary:               #3c0091;
-  --color-tertiary-container:        #a078ff;
-  --color-on-tertiary-container:     #340080;
-  --color-tertiary-fixed:            #e9ddff;
-  --color-tertiary-fixed-dim:        #d0bcff;
-  --color-on-tertiary-fixed:         #23005c;
-  --color-on-tertiary-fixed-variant: #5516be;
-  --color-error:                     #ffb4ab;
-  --color-on-error:                  #690005;
-  --color-error-container:           #93000a;
-  --color-on-error-container:        #ffdad6;
+  /* ── Ink surfaces (neutral, warm-black — not navy, not pure grey) ───── */
+  --color-background:                #0c0d11;
+  --color-surface:                   #0c0d11;
+  --color-surface-dim:               #0a0b0e;
+  --color-surface-bright:            #2c303a;
+  --color-surface-container-lowest:  #08090b;
+  --color-surface-container-low:     #121319;
+  --color-surface-container:         #16181f;
+  --color-surface-container-high:    #1d1f28;
+  --color-surface-container-highest: #262a34;
+  --color-surface-variant:           #23262f;
+  --color-on-surface:                #edeff3;
+  --color-on-surface-variant:        #9ba1b0;
+  --color-inverse-surface:           #edeff3;
+  --color-inverse-on-surface:        #1a1c23;
+  --color-outline:                   #565c6b;
+  --color-outline-variant:           #2a2d37;
+  --color-surface-tint:              #d9a441;
 
-  /* Typography */
+  /* ── Marginalia gold — the one accent, spent on citations + primary CTAs ── */
+  --color-primary:                   #d9a441;
+  --color-on-primary:                #1a1305;
+  --color-primary-container:         #3a2c0f;
+  --color-on-primary-container:      #f0c674;
+  --color-inverse-primary:           #8a6415;
+  --color-primary-fixed:             #f0c674;
+  --color-primary-fixed-dim:         #d9a441;
+  --color-on-primary-fixed:          #241a04;
+  --color-on-primary-fixed-variant:  #a97c1f;
+
+  /* ── Ink-blue — interactive/link/focus, distinct from citation gold ─── */
+  --color-secondary:                 #7fa8ff;
+  --color-on-secondary:              #08142f;
+  --color-secondary-container:       #1e2c4d;
+  --color-on-secondary-container:    #b7cbff;
+  --color-secondary-fixed:           #cfdcff;
+  --color-secondary-fixed-dim:       #7fa8ff;
+  --color-on-secondary-fixed:        #0a1730;
+  --color-on-secondary-fixed-variant: #4779e0;
+
+  /* ── Sage — success / indexed / ready states ─────────────────────────── */
+  --color-tertiary:                  #7fc79a;
+  --color-on-tertiary:               #0a2416;
+  --color-tertiary-container:        #173623;
+  --color-on-tertiary-container:     #a9e0bf;
+  --color-tertiary-fixed:            #c4f0d4;
+  --color-tertiary-fixed-dim:        #7fc79a;
+  --color-on-tertiary-fixed:         #04160d;
+  --color-on-tertiary-fixed-variant: #3f8e63;
+
+  /* ── Error ────────────────────────────────────────────────────────────── */
+  --color-error:                     #e88a7d;
+  --color-on-error:                  #400402;
+  --color-error-container:           #4a1712;
+  --color-on-error-container:        #ffdad4;
+
+  /* ── Typography: Geist for chrome, Source Serif 4 for grounded reading,
+       Inter for dense body/forms, JetBrains Mono for indices & data ───── */
   --font-geist:       'Geist', system-ui, sans-serif;
   --font-inter:       'Inter', system-ui, sans-serif;
   --font-mono:        'JetBrains Mono', 'Fira Code', monospace;
+  --font-serif:       'Source Serif 4', Georgia, serif;
   --font-display:     'Geist', system-ui, sans-serif;
   --font-body:        'Inter', system-ui, sans-serif;
   --font-ui:          'Geist', system-ui, sans-serif;
 
-  /* Keep legacy font tokens for design-system compatibility */
   --font-family-geist:      'Geist', system-ui, sans-serif;
   --font-family-inter:      'Inter', system-ui, sans-serif;
   --font-family-mono:       'JetBrains Mono', monospace;
 
-  /* Spacing */
+  /* ── Spacing ──────────────────────────────────────────────────────────── */
   --spacing-xs:           4px;
   --spacing-sm:           8px;
   --spacing-md:           16px;
@@ -72,7 +87,6 @@
   --spacing-sidebar:      280px;
   --spacing-container-max: 1440px;
 
-  /* Legacy spacing tokens (keep for backward compat with design-system) */
   --space-1:  0.25rem;
   --space-2:  0.5rem;
   --space-3:  0.75rem;
@@ -86,59 +100,56 @@
   --space-20: 5rem;
   --space-24: 6rem;
 
-  /* Border Radius */
-  --radius-sm:   4px;
+  /* ── Radius — a touch more rectangular than the typical "everything is
+       a pill" AI-app default; reserved for the notebook-tab motif ─────── */
+  --radius-sm:   6px;
   --radius-md:   8px;
   --radius-lg:   12px;
   --radius-xl:   16px;
-  --radius-2xl:  24px;
-  --radius-3xl:  32px;
+  --radius-2xl:  20px;
+  --radius-3xl:  28px;
   --radius-full: 9999px;
 
-  /* Type scale (was referenced everywhere — Button, Badge, Input, indexing
-     & project pages — but never defined, so every one of those elements was
-     silently falling back to the browser default 16px). */
-  --text-xs:   0.75rem;   /* 12px */
-  --text-sm:   0.8125rem; /* 13px */
-  --text-base: 0.875rem;  /* 14px */
-  --text-lg:   1rem;      /* 16px */
-  --text-xl:   1.125rem;  /* 18px */
-  --text-2xl:  1.375rem;  /* 22px */
-  --text-3xl:  1.75rem;   /* 28px */
-  --text-4xl:  2.25rem;   /* 36px */
+  --text-xs:   0.75rem;
+  --text-sm:   0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg:   1rem;
+  --text-xl:   1.125rem;
+  --text-2xl:  1.375rem;
+  --text-3xl:  1.75rem;
+  --text-4xl:  2.25rem;
 
-  /* Shadows */
-  --shadow-sm:     0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md:     0 4px 6px rgba(0,0,0,0.4);
-  --shadow-lg:     0 10px 15px rgba(0,0,0,0.5);
-  --shadow-glow-primary: 0 0 20px rgba(192,193,255,0.15);
-  --shadow-glow-secondary: 0 0 20px rgba(78,222,163,0.15);
+  --shadow-sm:     0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:     0 4px 10px rgba(0,0,0,0.45);
+  --shadow-lg:     0 16px 40px rgba(0,0,0,0.55);
+  --shadow-glow-primary:   0 0 0 1px rgba(217,164,65,0.16), 0 8px 24px rgba(217,164,65,0.10);
+  --shadow-glow-secondary: 0 0 0 1px rgba(127,168,255,0.16), 0 8px 24px rgba(127,168,255,0.10);
 
-  /* Transitions */
   --transition-fast:   120ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow:   350ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Legacy color tokens (keep for design-system components) */
-  --color-paper:         #0b1326;
-  --color-paper-subtle:  #131b2e;
-  --color-paper-muted:   #171f33;
-  --color-border:        #464554;
-  --color-border-subtle: #2d3449;
-  --color-ink:           #dae2fd;
-  --color-ink-secondary: #c7c4d7;
-  --color-ink-muted:     #908fa0;
-  --color-ink-faint:     #464554;
-  --color-accent:        #c0c1ff;
-  --color-accent-light:  rgba(192,193,255,0.1);
-  --color-accent-hover:  #8083ff;
-  --color-accent-border: rgba(192,193,255,0.3);
-  --color-success:       #4edea3;
-  --color-success-light: rgba(78,222,163,0.1);
-  --color-error-light:   rgba(255,180,171,0.1);
-  --color-warning:       #d0bcff;
-  --color-warning-light: rgba(208,188,255,0.1);
-  --color-surface-var:   #2d3449;
+  /* ── Legacy aliases kept so every existing var(--color-ink-*) etc. call
+       site resolves to the new palette without a page-by-page rewrite ─── */
+  --color-paper:         #0c0d11;
+  --color-paper-subtle:  #121319;
+  --color-paper-muted:   #16181f;
+  --color-border:        #2a2d37;
+  --color-border-subtle: #1d1f28;
+  --color-ink:           #edeff3;
+  --color-ink-secondary: #9ba1b0;
+  --color-ink-muted:     #6b7180;
+  --color-ink-faint:     #3a3d47;
+  --color-accent:        #d9a441;
+  --color-accent-light:  rgba(217,164,65,0.12);
+  --color-accent-hover:  #f0c674;
+  --color-accent-border: rgba(217,164,65,0.35);
+  --color-success:       #7fc79a;
+  --color-success-light: rgba(127,199,154,0.12);
+  --color-error-light:   rgba(232,138,125,0.12);
+  --color-warning:       #e2a63b;
+  --color-warning-light: rgba(226,166,59,0.12);
+  --color-surface-var:   #23262f;
   --sidebar-width:       280px;
   --content-max:         860px;
 }
@@ -180,16 +191,31 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  position: relative;
+}
+
+/* Faint paper grain — the one atmospheric touch, restrained and static
+   (no drifting gradient blobs). Pure CSS, no image asset needed. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image:
+    radial-gradient(circle at 1px 1px, #ffffff 1px, transparent 0);
+  background-size: 3px 3px;
 }
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #2d3449;
+  background: #2a2d37;
   border-radius: 10px;
 }
-::-webkit-scrollbar-thumb:hover { background: #c0c1ff; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
 
 /* ── Focus ───────────────────────────────────────────────────────────────── */
 :focus-visible {
@@ -198,90 +224,88 @@ body {
   border-radius: var(--radius-sm);
 }
 
-/* ── Glass Components ─────────────────────────────────────────────────────── */
+/* ── Surface components ──────────────────────────────────────────────────── */
 .glass-card {
-  background: rgba(19, 27, 46, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-surface-container-low);
+  border: 1px solid var(--color-outline-variant);
 }
 
 .glass-card-hover {
-  background: rgba(19, 27, 46, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--color-surface-container-low);
+  border: 1px solid var(--color-outline-variant);
+  transition: border-color var(--transition-normal), transform var(--transition-normal), box-shadow var(--transition-normal);
 }
 .glass-card-hover:hover {
-  border-color: rgba(192, 193, 255, 0.3);
-  background: rgba(23, 31, 51, 0.7);
-  transform: translateY(-4px);
-  box-shadow: 0 0 30px rgba(99, 102, 241, 0.1);
+  border-color: rgba(217,164,65,0.3);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
 }
 
 .glass-panel {
-  background: rgba(19, 27, 46, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-surface-container-low);
+  border: 1px solid var(--color-outline-variant);
 }
 
 .glass-nav {
-  background: rgba(19, 27, 46, 0.8);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(70, 69, 84, 0.5);
+  background: var(--color-surface-dim);
+  border-right: 1px solid var(--color-outline-variant);
 }
 
-/* ── AI Aura Animations ──────────────────────────────────────────────────── */
-@keyframes aura-pulse {
-  0%, 100% { opacity: 0.15; transform: scale(1) translate(0, 0); }
-  50% { opacity: 0.3; transform: scale(1.15) translate(5%, 3%); }
+/* ── Notebook spine — a restrained binding motif for pane dividers ───────── */
+.spine-divider {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--color-outline-variant) 0px,
+    var(--color-outline-variant) 4px,
+    transparent 4px,
+    transparent 10px
+  );
+  width: 1px;
 }
 
-@keyframes aura-drift {
-  0%, 100% { opacity: 0.1; transform: scale(1) translate(0, 0); }
-  33% { opacity: 0.2; transform: scale(1.1) translate(-5%, 5%); }
-  66% { opacity: 0.15; transform: scale(0.95) translate(3%, -3%); }
+/* ── Citation tab — the signature element ─────────────────────────────────
+   A small torn-corner index card in Marginalia gold, used for inline
+   citation markers and cited-source chips. */
+.citation-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--color-on-primary-container);
+  background: linear-gradient(160deg, rgba(217,164,65,0.22), rgba(217,164,65,0.10));
+  border: 1px solid rgba(217,164,65,0.4);
+  border-radius: 4px 4px 4px 4px;
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.citation-tab:hover {
+  background: linear-gradient(160deg, rgba(217,164,65,0.32), rgba(217,164,65,0.16));
+  border-color: rgba(217,164,65,0.65);
+  transform: translateY(-1px);
 }
 
-.ai-aura {
-  filter: blur(80px);
-  border-radius: 50%;
-  pointer-events: none;
-  animation: aura-pulse 8s ease-in-out infinite;
-}
-
-.ai-aura-drift {
-  filter: blur(80px);
-  border-radius: 50%;
-  pointer-events: none;
-  animation: aura-drift 12s ease-in-out infinite;
-}
-
-/* ── Shimmer Text ────────────────────────────────────────────────────────── */
+/* ── Shimmer Text (used sparingly — status/live states only) ─────────────── */
 @keyframes shimmer {
   to { background-position: 200% center; }
 }
-
 .shimmer-text {
-  background: linear-gradient(90deg, #c0c1ff 0%, #4edea3 50%, #c0c1ff 100%);
+  background: linear-gradient(90deg, #d9a441 0%, #7fa8ff 50%, #d9a441 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 4s linear infinite;
+  animation: shimmer 5s linear infinite;
 }
 
-/* ── Shimmer Loading Bar ─────────────────────────────────────────────────── */
 @keyframes shimmer-bar {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
-
 .shimmer-bg {
-  background: linear-gradient(90deg, transparent, rgba(192, 193, 255, 0.05), transparent);
+  background: linear-gradient(90deg, transparent, rgba(217,164,65,0.06), transparent);
   background-size: 200% 100%;
   animation: shimmer-bar 3s infinite linear;
 }
@@ -289,17 +313,34 @@ body {
 /* ── Input Focus Glow ────────────────────────────────────────────────────── */
 .input-glow:focus {
   outline: none;
-  border-color: #c0c1ff;
-  box-shadow: 0 0 0 4px rgba(192, 193, 255, 0.12);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.14);
 }
 
-/* ── AI Glow ─────────────────────────────────────────────────────────────── */
-.ai-glow {
-  box-shadow: 0 0 30px rgba(99, 102, 241, 0.08);
-}
+.ai-glow { box-shadow: var(--shadow-glow-primary); }
+.active-glow { box-shadow: var(--shadow-glow-primary); }
 
-.active-glow {
-  box-shadow: 0 0 20px rgba(192, 193, 255, 0.25);
+/* Restrained ambient glow — a fraction of the old intensity. One or two of
+   these per page reads as depth; more than that reads as "AI template". */
+@keyframes aura-pulse {
+  0%, 100% { opacity: 0.07; transform: scale(1) translate(0, 0); }
+  50%      { opacity: 0.13; transform: scale(1.08) translate(3%, 2%); }
+}
+@keyframes aura-drift {
+  0%, 100% { opacity: 0.05; transform: scale(1) translate(0, 0); }
+  50%      { opacity: 0.10; transform: scale(1.05) translate(-3%, 3%); }
+}
+.ai-aura {
+  filter: blur(90px);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: aura-pulse 10s ease-in-out infinite;
+}
+.ai-aura-drift {
+  filter: blur(90px);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: aura-drift 14s ease-in-out infinite;
 }
 
 /* ── Typography utilities ────────────────────────────────────────────────── */
@@ -307,11 +348,31 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-geist);
   color: var(--color-on-surface);
   line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 code, pre {
   font-family: var(--font-mono);
   font-size: 0.9em;
+}
+
+/* Prose reading style for grounded assistant answers */
+.answer-prose {
+  font-family: var(--font-serif);
+  font-size: 15.5px;
+  line-height: 1.75;
+  color: var(--color-on-surface);
+}
+.answer-prose p { margin: 0 0 0.9em 0; }
+.answer-prose p:last-child { margin-bottom: 0; }
+.answer-prose strong { color: var(--color-primary-fixed); font-weight: 600; }
+.answer-prose ul, .answer-prose ol { margin: 0 0 0.9em 1.3em; }
+.answer-prose li { margin-bottom: 0.35em; }
+.answer-prose code {
+  background: var(--color-surface-container-high);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.85em;
 }
 
 /* ── Utility ─────────────────────────────────────────────────────────────── */
@@ -336,6 +397,12 @@ code, pre {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 
 /* ── Motion preference ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

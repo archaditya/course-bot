@@ -26,19 +26,19 @@ export function Button({
     gap: '8px',
     fontFamily: 'var(--font-geist)',
     fontWeight: 600,
-    letterSpacing: '0.02em',
-    borderRadius: '10px',
+    letterSpacing: '0.01em',
+    borderRadius: 'var(--radius-md)',
     border: '1px solid transparent',
     cursor: disabled || loading ? 'not-allowed' : 'pointer',
-    opacity: disabled || loading ? 0.6 : 1,
-    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+    opacity: disabled || loading ? 0.55 : 1,
+    transition: 'all var(--transition-fast)',
     whiteSpace: 'nowrap',
   };
 
   const sizes: Record<string, React.CSSProperties> = {
     sm: { padding: '6px 12px', fontSize: 'var(--text-sm)' },
     md: { padding: '10px 18px', fontSize: 'var(--text-base)' },
-    lg: { padding: '14px 24px', fontSize: 'var(--text-lg)' },
+    lg: { padding: '13px 22px', fontSize: 'var(--text-lg)' },
   };
 
   const variants: Record<string, React.CSSProperties> = {
@@ -46,10 +46,10 @@ export function Button({
       background: 'var(--color-primary)',
       color: 'var(--color-on-primary)',
       borderColor: 'var(--color-primary)',
-      boxShadow: '0 4px 20px rgba(192,193,255,0.2)',
+      boxShadow: '0 1px 0 rgba(0,0,0,0.15), 0 6px 18px rgba(217,164,65,0.16)',
     },
     secondary: {
-      background: 'rgba(45,52,73,0.5)',
+      background: 'var(--color-surface-container-high)',
       color: 'var(--color-on-surface)',
       borderColor: 'var(--color-outline-variant)',
     },
@@ -61,7 +61,7 @@ export function Button({
     danger: {
       background: 'transparent',
       color: 'var(--color-error)',
-      borderColor: 'rgba(255,180,171,0.3)',
+      borderColor: 'rgba(232,138,125,0.35)',
     },
   };
 
@@ -69,6 +69,18 @@ export function Button({
     <button
       disabled={disabled || loading}
       style={{ ...base, ...sizes[size], ...variants[variant], ...style }}
+      onMouseEnter={(e) => {
+        if (disabled || loading) return;
+        if (variant === 'primary') e.currentTarget.style.background = 'var(--color-accent-hover)';
+        if (variant === 'secondary') e.currentTarget.style.borderColor = 'var(--color-outline)';
+        if (variant === 'ghost') e.currentTarget.style.color = 'var(--color-on-surface)';
+      }}
+      onMouseLeave={(e) => {
+        if (disabled || loading) return;
+        if (variant === 'primary') e.currentTarget.style.background = 'var(--color-primary)';
+        if (variant === 'secondary') e.currentTarget.style.borderColor = 'var(--color-outline-variant)';
+        if (variant === 'ghost') e.currentTarget.style.color = 'var(--color-on-surface-variant)';
+      }}
       {...rest}
     >
       {loading && <Spinner size={size === 'sm' ? 14 : 16} />}
@@ -93,7 +105,6 @@ export function Spinner({ size = 20, color = 'currentColor' }: { size?: number; 
       style={{ animation: 'spin 0.8s linear infinite' }}
       aria-label="Loading"
     >
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <circle cx="12" cy="12" r="10" opacity="0.25" />
       <path d="M12 2a10 10 0 0 1 10 10" />
     </svg>
@@ -106,22 +117,22 @@ type BadgeVariant = 'default' | 'success' | 'warning' | 'error' | 'accent';
 
 export function Badge({ children, variant = 'default' }: { children: React.ReactNode; variant?: BadgeVariant }) {
   const colors: Record<BadgeVariant, React.CSSProperties> = {
-    default: { background: 'var(--color-paper-muted)', color: 'var(--color-ink-secondary)' },
-    success: { background: 'var(--color-success-light)', color: 'var(--color-success)' },
-    warning: { background: 'var(--color-warning-light)', color: 'var(--color-warning)' },
-    error:   { background: 'var(--color-error-light)', color: 'var(--color-error)' },
-    accent:  { background: 'var(--color-accent-light)', color: 'var(--color-accent)' },
+    default: { background: 'var(--color-paper-muted)', color: 'var(--color-ink-secondary)', border: '1px solid var(--color-outline-variant)' },
+    success: { background: 'var(--color-success-light)', color: 'var(--color-success)', border: '1px solid rgba(127,199,154,0.3)' },
+    warning: { background: 'var(--color-warning-light)', color: 'var(--color-warning)', border: '1px solid rgba(226,166,59,0.3)' },
+    error:   { background: 'var(--color-error-light)', color: 'var(--color-error)', border: '1px solid rgba(232,138,125,0.3)' },
+    accent:  { background: 'var(--color-accent-light)', color: 'var(--color-accent)', border: '1px solid var(--color-accent-border)' },
   };
   return (
     <span style={{
       display: 'inline-flex',
       alignItems: 'center',
       padding: '2px 8px',
-      borderRadius: 'var(--radius-full)',
+      borderRadius: 'var(--radius-sm)',
       fontSize: 'var(--text-xs)',
       fontWeight: 600,
       fontFamily: 'var(--font-ui)',
-      letterSpacing: '0.02em',
+      letterSpacing: '0.03em',
       textTransform: 'uppercase',
       ...colors[variant],
     }}>
@@ -131,8 +142,8 @@ export function Badge({ children, variant = 'default' }: { children: React.React
 }
 
 // ── CitationMarker — the signature UI element ─────────────────────────────
-// Styled like a "sticky note" or "highlighted underline" reference.
-// docs/AI_Course_Assistant_UI_Prompt.md#4-visual-direction
+// A small "index-card tab" in Marginalia gold with a torn top-right corner.
+// Appears inline in assistant prose; clicking opens the source panel.
 
 interface CitationMarkerProps {
   index: number;
@@ -146,26 +157,18 @@ export function CitationMarker({ index, title, startTimestamp, onJumpTo }: Citat
   return (
     <button
       onClick={() => onJumpTo?.(startTimestamp)}
-      title={title ? `${title} (Click to view source)` : "Click to view source"}
+      title={title ? `${title} — view source` : "View source"}
+      className="citation-tab"
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "2px 6px",
-        background: "rgba(140, 136, 255, 0.18)",
-        border: "1px solid rgba(140, 136, 255, 0.4)",
-        borderRadius: "4px",
-        color: "var(--color-primary)",
-        fontSize: "11px",
-        fontFamily: "var(--font-mono)",
-        fontWeight: 600,
-        cursor: "pointer",
-        verticalAlign: "middle",
-        margin: "0 2px",
-        transition: "all var(--transition-fast)",
+        minWidth: '20px',
+        height: '18px',
+        padding: '0 5px',
+        fontSize: '10.5px',
+        verticalAlign: 'text-top',
+        margin: '0 1px',
       }}
     >
-      [{index + 1}]
+      {index + 1}
     </button>
   );
 }
@@ -209,20 +212,20 @@ export function ProcessingStepper({ status }: { status: string }) {
             transition: 'opacity var(--transition-normal)',
           }}>
             <span style={{
-              width: '24px',
-              height: '24px',
+              width: '22px',
+              height: '22px',
               borderRadius: 'var(--radius-full)',
-              border: `2px solid ${done ? 'var(--color-success)' : active ? 'var(--color-accent)' : 'var(--color-border)'}`,
-              background: done ? 'var(--color-success)' : active ? 'var(--color-accent-light)' : 'transparent',
+              border: `2px solid ${done ? 'var(--color-tertiary)' : active ? 'var(--color-primary)' : 'var(--color-outline-variant)'}`,
+              background: done ? 'var(--color-tertiary)' : active ? 'var(--color-accent-light)' : 'transparent',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
               transition: 'all var(--transition-normal)',
             }}>
-              {done && <span style={{ color: '#fff', fontSize: '12px' }}>✓</span>}
-              {active && !failed && <Spinner size={12} color="var(--color-accent)" />}
-              {failed && <span style={{ color: 'var(--color-error)', fontSize: '12px' }}>✕</span>}
+              {done && <span style={{ color: 'var(--color-on-tertiary)', fontSize: '11px', fontWeight: 700 }}>✓</span>}
+              {active && !failed && <Spinner size={11} color="var(--color-primary)" />}
+              {failed && <span style={{ color: 'var(--color-error)', fontSize: '11px' }}>✕</span>}
             </span>
             <span style={{
               fontSize: 'var(--text-sm)',
@@ -267,7 +270,7 @@ export function Input({ label, error, id, style, ...rest }: InputProps) {
           fontSize: '13px',
           padding: '12px 14px',
           border: `1px solid ${error ? 'var(--color-error)' : 'var(--color-outline-variant)'}`,
-          borderRadius: '10px',
+          borderRadius: 'var(--radius-md)',
           background: 'var(--color-surface-container-lowest)',
           color: 'var(--color-on-surface)',
           outline: 'none',
@@ -283,5 +286,26 @@ export function Input({ label, error, id, style, ...rest }: InputProps) {
         </span>
       )}
     </div>
+  );
+}
+
+// ── SourceTypeIcon — consistent iconography for source kinds ──────────────
+
+export function SourceTypeIcon({ kind, size = 16 }: { kind?: string; size?: number }) {
+  const map: Record<string, string> = {
+    youtube: 'smart_display',
+    video: 'smart_display',
+    pdf: 'picture_as_pdf',
+    web: 'language',
+    url: 'language',
+    text: 'description',
+    txt: 'description',
+    doc: 'article',
+  };
+  const icon = map[(kind || '').toLowerCase()] || 'description';
+  return (
+    <span className="material-symbols-outlined" style={{ fontSize: `${size}px` }}>
+      {icon}
+    </span>
   );
 }

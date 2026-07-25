@@ -95,7 +95,7 @@ export default function DashboardPage() {
                 padding: '8px 14px',
                 borderRadius: '8px',
                 border: '1px solid var(--color-outline-variant)',
-                background: 'rgba(19,27,46,0.5)',
+                background: 'rgba(18,19,25,0.5)',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-geist)',
                 fontSize: '12px',
@@ -127,7 +127,7 @@ export default function DashboardPage() {
               style={{
                 borderRadius: '16px',
                 padding: '20px',
-                border: '1px solid rgba(192,193,255,0.2)',
+                border: '1px solid rgba(217,164,65,0.2)',
                 display: 'flex',
                 gap: '12px',
                 alignItems: 'flex-end',
@@ -244,7 +244,7 @@ export default function DashboardPage() {
               justifyContent: 'center',
               gap: '12px',
               cursor: 'pointer',
-              background: 'rgba(19,27,46,0.3)',
+              background: 'rgba(18,19,25,0.3)',
               position: 'relative',
               overflow: 'hidden',
               transition: 'border-color 0.2s',
@@ -285,7 +285,7 @@ export default function DashboardPage() {
                 style={{ textDecoration: 'none', display: 'block' }}
               >
                 <motion.div
-                  whileHover={{ y: -4, boxShadow: '0 0 20px rgba(192,193,255,0.1)' }}
+                  whileHover={{ y: -4, boxShadow: '0 0 20px rgba(217,164,65,0.1)' }}
                   transition={{ duration: 0.2 }}
                   className="glass-card"
                   style={{
@@ -377,7 +377,7 @@ export default function DashboardPage() {
                   <div
                     style={{
                       paddingTop: '12px',
-                      borderTop: '1px solid rgba(70,69,84,0.3)',
+                      borderTop: '1px solid rgba(42,45,55,0.3)',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
@@ -428,7 +428,7 @@ export default function DashboardPage() {
                     <h3 style={{ fontFamily: 'var(--font-geist)', fontSize: '15px', fontWeight: 600, color: 'var(--color-on-surface)', margin: 0, marginBottom: '6px' }}>{proj.title}</h3>
                     <p style={{ fontFamily: 'var(--font-inter)', fontSize: '12px', color: 'var(--color-on-surface-variant)', margin: 0, lineHeight: 1.5 }}>{proj.desc}</p>
                   </div>
-                  <div style={{ paddingTop: '12px', borderTop: '1px solid rgba(70,69,84,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ paddingTop: '12px', borderTop: '1px solid rgba(42,45,55,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-geist)', fontSize: '11px', color: 'var(--color-on-surface-variant)', letterSpacing: '0.05em' }}>
                       <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>description</span>
                       {proj.sources} Sources

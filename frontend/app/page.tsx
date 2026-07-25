@@ -29,7 +29,7 @@ export default function RootPage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#0b1326',
+          background: 'var(--color-background)',
         }}
       >
         <Spinner size={32} color="var(--color-primary)" />

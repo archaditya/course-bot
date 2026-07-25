@@ -1,8 +1,10 @@
+import re
 from typing import List
 
 import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
+from youtube_transcript_api import YouTubeTranscriptApi
 
 
 class URLSection(BaseModel):
@@ -16,18 +18,90 @@ class URLExtractionResult(BaseModel):
 
 
 class URLExtractorService:
-    """Fetches a web page and extracts readable text content.
+    """Fetches a web page or YouTube video transcript and extracts readable text content."""
 
-    Uses BeautifulSoup with a readability-style extraction approach:
-    strips nav, footer, sidebar, ads, and other non-content elements,
-    then segments the remaining text by headings/paragraphs.
-    """
-
-    # Elements that typically contain navigation, ads, or non-content
     NOISE_TAGS = {"nav", "footer", "header", "aside", "script", "style", "noscript", "iframe"}
     NOISE_CLASSES = {"sidebar", "navigation", "nav", "footer", "header", "ad", "advertisement", "menu", "cookie"}
 
+    def _extract_youtube_id(self, url: str) -> str | None:
+        """Extracts YouTube video ID from various URL formats."""
+        patterns = [
+            r"(?:v=|\/)([a-zA-Z0-9_-]{11})(?:[\?&]|$)",
+            r"youtu\.be\/([a-zA-Z0-9_-]{11})",
+            r"youtube\.com\/embed\/([a-zA-Z0-9_-]{11})",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return None
+
+    async def _extract_youtube(self, video_id: str, original_url: str) -> URLExtractionResult:
+        """Extracts title and timestamped transcript from YouTube videos using YouTubeTranscriptApi."""
+        title = f"YouTube Video ({video_id})"
+
+        # 1. Try fetching video title via YouTube oEmbed API
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    title = data.get("title", title)
+        except Exception:
+            pass
+
+        # 2. Extract transcript using YouTubeTranscriptApi instance
+        try:
+            ytt = YouTubeTranscriptApi()
+            fetched = ytt.fetch(video_id, languages=["en", "en-US", "hi"])
+
+            if fetched:
+                sections: List[URLSection] = []
+                chunk_text: List[str] = []
+                chunk_start_ts = "00:00"
+
+                for i, item in enumerate(fetched):
+                    start_sec = int(getattr(item, "start", 0))
+                    mins = start_sec // 60
+                    secs = start_sec % 60
+                    timestamp = f"{mins:02d}:{secs:02d}"
+
+                    if not chunk_text:
+                        chunk_start_ts = timestamp
+
+                    text_str = getattr(item, "text", "").strip()
+                    if text_str:
+                        chunk_text.append(text_str)
+
+                    # Group transcript into ~800 character sections with timestamp headers
+                    if len(" ".join(chunk_text)) > 800 or i == len(fetched) - 1:
+                        section_content = " ".join(chunk_text).strip()
+                        if section_content:
+                            sections.append(
+                                URLSection(
+                                    heading=f"Transcript Segment [{chunk_start_ts}]",
+                                    text=f"[{chunk_start_ts}] {section_content}",
+                                )
+                            )
+                        chunk_text = []
+
+                if sections:
+                    return URLExtractionResult(title=title, sections=sections)
+
+        except Exception as e:
+            print(f"YouTube transcript extraction failed for {video_id}: {e}")
+
+        return URLExtractionResult(title=title, sections=[])
+
     async def extract(self, url: str) -> URLExtractionResult:
+        # Check if URL is a YouTube Video
+        yt_id = self._extract_youtube_id(url)
+        if yt_id:
+            yt_result = await self._extract_youtube(yt_id, url)
+            if yt_result.sections:
+                return yt_result
+
+        # Standard Web Page Scraper Fallback
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.get(url, headers={
                 "User-Agent": "archadiLM/1.0 (course-material-indexer)"

@@ -94,7 +94,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             style={{
               width: '40px',
               height: '40px',
-              borderRadius: '10px',
+              borderRadius: 'var(--radius-md)',
               background: 'var(--color-primary-container)',
               display: 'flex',
               alignItems: 'center',
@@ -102,7 +102,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               marginBottom: '20px',
             }}
           >
-            <span className="material-symbols-outlined" style={{ color: 'var(--color-on-primary-container)', fontSize: '22px' }}>memory</span>
+            <span className="material-symbols-outlined" style={{ color: 'var(--color-on-primary-container)', fontSize: '22px' }}>auto_stories</span>
           </div>
         </Link>
 
@@ -117,9 +117,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   gap: '4px',
                   padding: '10px 4px',
                   width: '72px',
-                  borderRadius: '12px',
+                  borderRadius: 'var(--radius-md)',
                   color: item.active ? 'var(--color-secondary)' : item.enabled ? 'var(--color-on-surface-variant)' : 'var(--color-ink-faint)',
-                  background: item.active ? 'rgba(0,165,114,0.14)' : 'transparent',
+                  background: item.active ? 'var(--color-secondary-container)' : 'transparent',
                   cursor: item.enabled ? 'pointer' : 'not-allowed',
                   opacity: item.enabled ? 1 : 0.45,
                   transition: 'all 0.15s',
@@ -151,7 +151,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* Footer: user + logout */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', paddingTop: '12px', borderTop: '1px solid rgba(70,69,84,0.3)', width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', paddingTop: '12px', borderTop: '1px solid rgba(42,45,55,0.3)', width: '100%' }}>
           {user && (
             <div
               title={user.full_name || user.email}

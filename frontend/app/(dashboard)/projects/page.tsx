@@ -89,7 +89,7 @@ export default function ProjectsPage() {
                 padding: '8px 14px',
                 borderRadius: '8px',
                 border: '1px solid var(--color-outline-variant)',
-                background: 'rgba(19,27,46,0.5)',
+                background: 'rgba(18,19,25,0.5)',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-geist)',
                 fontSize: '12px',
@@ -121,7 +121,7 @@ export default function ProjectsPage() {
               style={{
                 borderRadius: '16px',
                 padding: '20px',
-                border: '1px solid rgba(192,193,255,0.2)',
+                border: '1px solid rgba(217,164,65,0.2)',
                 display: 'flex',
                 gap: '12px',
                 alignItems: 'flex-end',
@@ -238,7 +238,7 @@ export default function ProjectsPage() {
               justifyContent: 'center',
               gap: '12px',
               cursor: 'pointer',
-              background: 'rgba(19,27,46,0.3)',
+              background: 'rgba(18,19,25,0.3)',
               position: 'relative',
               overflow: 'hidden',
               transition: 'border-color 0.2s',
@@ -279,7 +279,7 @@ export default function ProjectsPage() {
                 style={{ textDecoration: 'none', display: 'block' }}
               >
                 <motion.div
-                  whileHover={{ y: -4, boxShadow: '0 0 20px rgba(192,193,255,0.1)' }}
+                  whileHover={{ y: -4, boxShadow: '0 0 20px rgba(217,164,65,0.1)' }}
                   transition={{ duration: 0.2 }}
                   className="glass-card"
                   style={{
@@ -371,7 +371,7 @@ export default function ProjectsPage() {
                   <div
                     style={{
                       paddingTop: '12px',
-                      borderTop: '1px solid rgba(70,69,84,0.3)',
+                      borderTop: '1px solid rgba(42,45,55,0.3)',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
