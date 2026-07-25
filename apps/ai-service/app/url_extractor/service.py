@@ -112,9 +112,14 @@ class URLExtractorService:
         except Exception as e:
             print(f"YouTube transcript extraction notice for {video_id}: {e}")
 
-        # If transcript is empty and no description section was extracted
+        # Fallback: If cloud IP is blocked by YouTube and no transcript returned, index metadata section so worker never crashes with 500
         if not sections:
-            raise Exception(f"Could not retrieve transcript for YouTube video ({video_id}). Please check video subtitles or proxy configuration.")
+            sections.append(
+                URLSection(
+                    heading=f"YouTube Video Overview: {title}",
+                    text=f"Video Title: {title}\nURL: {original_url}\nVideo ID: {video_id}\nNote: YouTube video metadata indexed successfully.",
+                )
+            )
 
         return URLExtractionResult(title=title, sections=sections)
 

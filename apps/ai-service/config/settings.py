@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     reranker_provider: Literal["openai"] = "openai"
     guardrail_provider: Literal["openai"] = "openai"
 
+    # YouTube API
+    youtube_api_key: str = os.getenv("YOUTUBE_API_KEY", "")
+
+
 
 settings = Settings()
 
