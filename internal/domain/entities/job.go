@@ -41,16 +41,17 @@ var validJobTransitions = map[JobStatus][]JobStatus{
 }
 
 // Job is a unit of background work (parse, chunk, embed, etc.) tracked
-// through its own lifecycle, independent of Course state. See
-// docs/03-domain-model.md and docs/09-deployment.md#error-handling.
+// through its own lifecycle, independent of Document state. Every Job now
+// tracks exactly one Document — there is no more manifest-level job that
+// fans out across an entire collection.
 type Job struct {
 	ID              string
-	CourseID        string
-	DocumentID      *string // nullable: manifest-level jobs aren't per-document
+	ConversationID  string
+	DocumentID      string
 	Stage           JobStage
 	Status          JobStatus
 	Attempts        int
-	MaxAttempts     int // see docs/09-deployment.md#non-functional-requirements: retry cap of 3
+	MaxAttempts     int
 	PipelineVersion string
 	LastError       string
 	CreatedAt       time.Time

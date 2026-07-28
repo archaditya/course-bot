@@ -17,8 +17,8 @@ func NewConversationRepository(db *sql.DB) repository.ConversationRepository {
 }
 
 func (r *conversationRepository) Create(ctx context.Context, c *entities.Conversation) error {
-	const q = `INSERT INTO conversations (id, project_id, title) VALUES ($1,$2,$3)`
-	_, err := r.db.ExecContext(ctx, q, c.ID, c.ProjectID, c.Title)
+	const q = `INSERT INTO conversations (id, workspace_id, title) VALUES ($1,$2,$3)`
+	_, err := r.db.ExecContext(ctx, q, c.ID, c.WorkspaceID, c.Title)
 	if err != nil {
 		return fmt.Errorf("conversation: create: %w", err)
 	}
@@ -27,13 +27,12 @@ func (r *conversationRepository) Create(ctx context.Context, c *entities.Convers
 
 func (r *conversationRepository) GetByID(ctx context.Context, ws repository.WorkspaceID, id string) (*entities.Conversation, error) {
 	const q = `
-		SELECT c.id, c.project_id, c.title, c.created_at, c.updated_at
-		FROM conversations c
-		JOIN projects p ON p.id = c.project_id
-		WHERE c.id = $1 AND p.workspace_id = $2`
+		SELECT id, workspace_id, title, created_at, updated_at
+		FROM conversations
+		WHERE id = $1 AND workspace_id = $2`
 	row := r.db.QueryRowContext(ctx, q, id, ws)
 	var conv entities.Conversation
-	err := row.Scan(&conv.ID, &conv.ProjectID, &conv.Title, &conv.CreatedAt, &conv.UpdatedAt)
+	err := row.Scan(&conv.ID, &conv.WorkspaceID, &conv.Title, &conv.CreatedAt, &conv.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, repository.ErrNotFound
 	}
@@ -43,18 +42,18 @@ func (r *conversationRepository) GetByID(ctx context.Context, ws repository.Work
 	return &conv, nil
 }
 
-func (r *conversationRepository) ListByProject(ctx context.Context, ws repository.WorkspaceID, projectID, cursor string, limit int) ([]*entities.Conversation, string, error) {
-	args := []interface{}{projectID, ws}
+func (r *conversationRepository) ListByWorkspace(ctx context.Context, ws repository.WorkspaceID, cursor string, limit int) ([]*entities.Conversation, string, error) {
+	limit = normalizeLimit(limit)
+	args := []interface{}{ws}
 	q := `
-		SELECT c.id, c.project_id, c.title, c.created_at, c.updated_at
-		FROM conversations c
-		JOIN projects p ON p.id = c.project_id
-		WHERE c.project_id = $1 AND p.workspace_id = $2`
+		SELECT id, workspace_id, title, created_at, updated_at
+		FROM conversations
+		WHERE workspace_id = $1`
 	if cursor != "" {
-		q += ` AND c.id > $3`
+		q += ` AND id > $2`
 		args = append(args, cursor)
 	}
-	q += fmt.Sprintf(` ORDER BY c.created_at DESC LIMIT %d`, limit+1)
+	q += fmt.Sprintf(` ORDER BY updated_at DESC LIMIT %d`, limit+1)
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -65,7 +64,7 @@ func (r *conversationRepository) ListByProject(ctx context.Context, ws repositor
 	var convs []*entities.Conversation
 	for rows.Next() {
 		var c entities.Conversation
-		if err := rows.Scan(&c.ID, &c.ProjectID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, "", err
 		}
 		convs = append(convs, &c)
@@ -78,17 +77,20 @@ func (r *conversationRepository) ListByProject(ctx context.Context, ws repositor
 	return convs, next, rows.Err()
 }
 
-func (r *conversationRepository) UpdateTitle(ctx context.Context, id, title string) error {
-	const q = `UPDATE conversations SET title = $2, updated_at = NOW() WHERE id = $1`
-	_, err := r.db.ExecContext(ctx, q, id, title)
-	return err
+func (r *conversationRepository) UpdateTitle(ctx context.Context, ws repository.WorkspaceID, id, title string) error {
+	const q = `UPDATE conversations SET title = $1, updated_at = NOW() WHERE id = $2 AND workspace_id = $3`
+	res, err := r.db.ExecContext(ctx, q, title, id, ws)
+	if err != nil {
+		return fmt.Errorf("conversation: update title: %w", err)
+	}
+	return checkRowsAffected(res)
 }
 
 func (r *conversationRepository) Delete(ctx context.Context, ws repository.WorkspaceID, id string) error {
-	const q = `
-		DELETE FROM conversations c
-		USING projects p
-		WHERE c.id = $1 AND c.project_id = p.id AND p.workspace_id = $2`
-	_, err := r.db.ExecContext(ctx, q, id, ws)
-	return err
+	const q = `DELETE FROM conversations WHERE id = $1 AND workspace_id = $2`
+	res, err := r.db.ExecContext(ctx, q, id, ws)
+	if err != nil {
+		return fmt.Errorf("conversation: delete: %w", err)
+	}
+	return checkRowsAffected(res)
 }

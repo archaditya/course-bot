@@ -68,7 +68,6 @@ func main() {
 	aiClient := llm.NewClient(aiServiceURL)
 
 	// ── Repositories ──────────────────────────────────────────────────────
-	courses := pginfra.NewCourseRepository(db)
 	documents := pginfra.NewDocumentRepository(db)
 	jobs := pginfra.NewJobRepository(db)
 	chunks := pginfra.NewChunkRepository(db)
@@ -79,16 +78,16 @@ func main() {
 	jobStore := redisinfra.NewJobStore(queue.Client())
 
 	textProcessorWorker := worker.NewTextProcessorWorker(
-		courses, jobs, documents, objects, queue, ids, aiClient, cfg.AllowedURLDomains,
+		jobs, documents, objects, queue, ids, aiClient, cfg.AllowedURLDomains,
 	)
 	textProcessorWorker.SetJobStore(jobStore)
 
 	indexerWorker := worker.NewIndexerWorker(
-		courses, jobs, chunks, vectors, queue, ids, aiClient,
+		documents, jobs, chunks, vectors, queue, ids, aiClient,
 	)
 	indexerWorker.SetJobStore(jobStore)
 
-	manifestWorker := worker.NewManifestWorker(courses, jobs, documents, queue, ids)
+	manifestWorker := worker.NewManifestWorker(documents, jobs, queue, ids)
 	manifestWorker.SetJobStore(jobStore)
 
 	// ── Start all stages ──────────────────────────────────────────────────

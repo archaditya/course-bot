@@ -17,7 +17,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/projects");
+      router.replace("/chat");
     }
   }, [isLoading, isAuthenticated, router]);
 
@@ -25,7 +25,7 @@ export default function LoginPage() {
     mutationFn: () => apiLogin(email, password),
     onSuccess: (data) => {
       login(data);
-      router.push("/projects");
+      router.push("/chat");
     },
   });
 

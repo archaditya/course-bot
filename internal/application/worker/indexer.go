@@ -24,7 +24,7 @@ type IndexerWorker struct {
 }
 
 func NewIndexerWorker(
-	courses repository.CourseRepository,
+	documents repository.DocumentRepository,
 	jobs repository.JobRepository,
 	chunks repository.ChunkRepository,
 	vectors provider.VectorStore,
@@ -33,7 +33,7 @@ func NewIndexerWorker(
 	aiClient *llm.Client,
 ) *IndexerWorker {
 	return &IndexerWorker{
-		base:     base{courses: courses, jobs: jobs, queue: queue, ids: ids}, // ADD ids
+		base:     base{documents: documents, jobs: jobs, queue: queue, ids: ids},
 		chunks:   chunks,
 		vectors:  vectors,
 		aiClient: aiClient,
@@ -70,7 +70,7 @@ func (w *IndexerWorker) Run(ctx context.Context) error {
 }
 
 func (w *IndexerWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
-	courseID, _ := qe.Payload["course_id"].(string)
+	conversationID, _ := qe.Payload["conversation_id"].(string)
 	chunksJSON, _ := qe.Payload["chunks"].(string)
 	jobID, _ := qe.Payload["job_id"].(string)
 
@@ -85,20 +85,20 @@ func (w *IndexerWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 			log.Printf("indexer: start job: %v", err)
 			return
 		}
-		if err := w.process(ctx, courseID, chunksJSON, qe.TraceID, job); err == nil {
-			if err := w.succeedJob(ctx, "", job, entities.CourseStatusIndexed); err != nil {
+		if err := w.process(ctx, conversationID, chunksJSON, qe.TraceID, job); err == nil {
+			if err := w.succeedJob(ctx, job, entities.DocumentStatusIndexed); err != nil {
 				log.Printf("indexer: complete job %s: %v", job.ID, err)
 				return
 			}
 			// Publish INDEXED event
 			_ = w.queue.Publish(ctx, "pipeline:status", provider.Event{
 				Name:    "INDEXED",
-				Payload: map[string]any{"course_id": courseID},
+				Payload: map[string]any{"conversation_id": conversationID},
 				TraceID: qe.TraceID,
 			})
 			return
 		} else {
-			w.failJob(ctx, "", job, "indexing", courseID, qe.TraceID, err)
+			w.failJob(ctx, job, "indexing", conversationID, qe.TraceID, err)
 			if job.Status == entities.JobStatusDeadLettered {
 				return
 			}
@@ -106,7 +106,7 @@ func (w *IndexerWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 	}
 }
 
-func (w *IndexerWorker) process(ctx context.Context, courseID, chunksJSON, traceID string, job *entities.Job) error {
+func (w *IndexerWorker) process(ctx context.Context, conversationID, chunksJSON, traceID string, job *entities.Job) error {
 	var chunks []entities.Chunk
 	if err := json.Unmarshal([]byte(chunksJSON), &chunks); err != nil {
 		return fmt.Errorf("indexer: unmarshal: %w", err)
@@ -142,7 +142,8 @@ func (w *IndexerWorker) process(ctx context.Context, courseID, chunksJSON, trace
 	for i, c := range chunks {
 		points[i] = provider.VectorPoint{
 			ChunkID:        c.ID,
-			CourseID:       courseID,
+			ConversationID: conversationID,
+			DocumentID:     c.DocumentID,
 			StartTimestamp: c.StartTimestamp,
 			Vector:         vecs[i],
 		}

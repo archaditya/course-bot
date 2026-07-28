@@ -10,14 +10,14 @@ import { Spinner } from '@/design-system';
 // the dashboard by manually importing the (dashboard) layout + page — which
 // collided with app/(dashboard)/page.tsx also resolving to "/" and broke the
 // standalone production build. The dashboard now lives at its own real route
-// (/projects), so this page just has to redirect signed-in users there.
+// (/chat), so this page just has to redirect signed-in users there.
 export default function RootPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace('/projects');
+      router.replace('/chat');
     }
   }, [isLoading, isAuthenticated, router]);
 

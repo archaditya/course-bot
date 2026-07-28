@@ -17,7 +17,7 @@ export default function SignupPage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace('/projects');
+      router.replace('/chat');
     }
   }, [isLoading, isAuthenticated, router]);
 
@@ -29,7 +29,7 @@ export default function SignupPage() {
     },
     onSuccess: (tokens) => {
       login(tokens);
-      router.push('/projects');
+      router.push('/chat');
     },
   });
 

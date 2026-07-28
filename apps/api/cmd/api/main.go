@@ -16,8 +16,6 @@ import (
 
 	authapp "archadilm/internal/application/auth"
 	chatapp "archadilm/internal/application/chat"
-	courseapp "archadilm/internal/application/course"
-	projectapp "archadilm/internal/application/project"
 	uploadapp "archadilm/internal/application/upload"
 	"archadilm/internal/config"
 	"archadilm/internal/infrastructure/id"
@@ -94,9 +92,6 @@ func main() {
 	users := postgres.NewUserRepository(db)
 	workspaces := postgres.NewWorkspaceRepository(db)
 	refreshTokens := postgres.NewRefreshTokenRepository(db)
-	projects := postgres.NewProjectRepository(db)
-	courses := postgres.NewCourseRepository(db)
-	lessons := postgres.NewLessonRepository(db)
 	documents := postgres.NewDocumentRepository(db)
 	jobs := postgres.NewJobRepository(db)
 	conversations := postgres.NewConversationRepository(db)
@@ -106,35 +101,30 @@ func main() {
 
 	// ── Application services ───────────────────────────────────────────────
 	authService := authapp.NewService(users, workspaces, refreshTokens, cfg.Auth.JWTSigningKey)
-	projectService := projectapp.NewService(projects)
-	courseService := courseapp.NewService(courses)
 
 	var uploadService *uploadapp.Service
 	if objects != nil && queue != nil {
-		uploadService = uploadapp.NewService(courses, lessons, documents, jobs, objects, queue, ids)
+		uploadService = uploadapp.NewService(conversations, documents, jobs, objects, queue, ids)
 	}
 
 	var chatService *chatapp.Service
 	if vectors != nil {
 		chatService = chatapp.NewService(
-			conversations, messages, citations, projects,
-			courses, chunks,
+			conversations, messages, citations, chunks,
 			aiClient, vectors, aiClient,
 			cfg.Flags.MaxEvaluatorRetries, ids,
 		)
 	}
 
-	statusHandler := httpapi.NewStatusHandler(courses, jobs)
+	statusHandler := httpapi.NewStatusHandler(documents, jobs)
 
 	// ── HTTP wiring ────────────────────────────────────────────────────────
 	deps := httpapi.Dependencies{
-		JWTSigningKey:  cfg.Auth.JWTSigningKey,
-		AuthHandler:    httpapi.NewAuthHandler(authService),
-		ProjectHandler: httpapi.NewProjectHandler(projectService),
-		CourseHandler:  httpapi.NewCourseHandler(courseService),
-		UploadHandler:  httpapi.NewUploadHandler(uploadService),
-		ChatHandler:    httpapi.NewChatHandler(chatService),
-		StatusHandler:  statusHandler,
+		JWTSigningKey: cfg.Auth.JWTSigningKey,
+		AuthHandler:   httpapi.NewAuthHandler(authService),
+		UploadHandler: httpapi.NewUploadHandler(uploadService, documents),
+		ChatHandler:   httpapi.NewChatHandler(chatService),
+		StatusHandler: statusHandler,
 
 		// Add health check dependencies
 		RedisClient: queue,

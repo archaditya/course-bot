@@ -19,10 +19,10 @@ func NewJobRepository(db *sql.DB) repository.JobRepository {
 func (r *jobRepository) Create(ctx context.Context, j *entities.Job) error {
 	const q = `
 		INSERT INTO jobs
-			(id, course_id, document_id, stage, status, attempts, max_attempts, pipeline_version, last_error)
+			(id, conversation_id, document_id, stage, status, attempts, max_attempts, pipeline_version, last_error)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`
 	_, err := r.db.ExecContext(ctx, q,
-		j.ID, j.CourseID, nullString(j.DocumentID),
+		j.ID, j.ConversationID, j.DocumentID,
 		string(j.Stage), string(j.Status),
 		j.Attempts, j.MaxAttempts, j.PipelineVersion, j.LastError,
 	)
@@ -34,7 +34,7 @@ func (r *jobRepository) Create(ctx context.Context, j *entities.Job) error {
 
 func (r *jobRepository) GetByID(ctx context.Context, id string) (*entities.Job, error) {
 	const q = `
-		SELECT id, course_id, document_id, stage, status, attempts, max_attempts,
+		SELECT id, conversation_id, document_id, stage, status, attempts, max_attempts,
 		       pipeline_version, last_error, created_at, updated_at
 		FROM jobs WHERE id = $1`
 	row := r.db.QueryRowContext(ctx, q, id)
@@ -45,12 +45,12 @@ func (r *jobRepository) GetByID(ctx context.Context, id string) (*entities.Job, 
 	return j, err
 }
 
-func (r *jobRepository) ListByCourse(ctx context.Context, courseID string) ([]*entities.Job, error) {
+func (r *jobRepository) ListByDocument(ctx context.Context, documentID string) ([]*entities.Job, error) {
 	const q = `
-		SELECT id, course_id, document_id, stage, status, attempts, max_attempts,
+		SELECT id, conversation_id, document_id, stage, status, attempts, max_attempts,
 		       pipeline_version, last_error, created_at, updated_at
-		FROM jobs WHERE course_id = $1 ORDER BY created_at`
-	rows, err := r.db.QueryContext(ctx, q, courseID)
+		FROM jobs WHERE document_id = $1 ORDER BY created_at`
+	rows, err := r.db.QueryContext(ctx, q, documentID)
 	if err != nil {
 		return nil, fmt.Errorf("job: list: %w", err)
 	}
@@ -90,9 +90,8 @@ type jobScanner interface{ Scan(dest ...any) error }
 func scanJobFields(s jobScanner) (*entities.Job, error) {
 	var j entities.Job
 	var stage, status, lastError string
-	var docID sql.NullString
 	err := s.Scan(
-		&j.ID, &j.CourseID, &docID, &stage, &status,
+		&j.ID, &j.ConversationID, &j.DocumentID, &stage, &status,
 		&j.Attempts, &j.MaxAttempts, &j.PipelineVersion, &lastError,
 		&j.CreatedAt, &j.UpdatedAt,
 	)
@@ -102,9 +101,6 @@ func scanJobFields(s jobScanner) (*entities.Job, error) {
 	j.Stage = entities.JobStage(stage)
 	j.Status = entities.JobStatus(status)
 	j.LastError = lastError
-	if docID.Valid {
-		j.DocumentID = &docID.String
-	}
 	return &j, nil
 }
 

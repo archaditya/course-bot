@@ -22,13 +22,14 @@ const (
 	MessageStatusLowConfidence MessageStatus = "LOW_CONFIDENCE"
 )
 
-// Conversation is a chat thread within a Project.
+// Conversation is a chat thread, scoped directly to a Workspace. Every
+// conversation can be grounded in every Document the workspace owns.
 type Conversation struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	Title     string    `json:"title"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	Title       string    `json:"title"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Message is one turn inside a Conversation.

@@ -13,13 +13,13 @@ import (
 	"archadilm/internal/infrastructure/llm"
 )
 
-// Service owns the chat (query pipeline) use case.
+// Service owns the chat (query pipeline) use case. Retrieval is always
+// scoped to one conversation's own documents — there is no broader scope to
+// accidentally search across.
 type Service struct {
 	conversations repository.ConversationRepository
 	messages      repository.MessageRepository
 	citations     repository.CitationRepository
-	projects      repository.ProjectRepository
-	courses       repository.CourseRepository
 	chunks        repository.ChunkRepository
 	aiClient      *llm.Client
 	guardrails    provider.GuardrailProvider
@@ -34,8 +34,6 @@ func NewService(
 	conversations repository.ConversationRepository,
 	messages repository.MessageRepository,
 	citations repository.CitationRepository,
-	projects repository.ProjectRepository,
-	courses repository.CourseRepository,
 	chunks repository.ChunkRepository,
 	aiClient *llm.Client,
 	vectors provider.VectorStore,
@@ -47,8 +45,6 @@ func NewService(
 		conversations: conversations,
 		messages:      messages,
 		citations:     citations,
-		projects:      projects,
-		courses:       courses,
 		chunks:        chunks,
 		aiClient:      aiClient,
 		guardrails:    aiClient,
@@ -80,11 +76,11 @@ type StreamToken struct {
 	Error string
 }
 
-func (s *Service) CreateConversation(ctx context.Context, ws repository.WorkspaceID, projectID string) (*entities.Conversation, error) {
+func (s *Service) CreateConversation(ctx context.Context, ws repository.WorkspaceID) (*entities.Conversation, error) {
 	conv := &entities.Conversation{
-		ID:        s.ids.New(),
-		ProjectID: projectID,
-		Title:     "New Chat",
+		ID:          s.ids.New(),
+		WorkspaceID: ws,
+		Title:       "New Chat",
 	}
 	if err := s.conversations.Create(ctx, conv); err != nil {
 		return nil, fmt.Errorf("chat: create conversation: %w", err)
@@ -92,24 +88,21 @@ func (s *Service) CreateConversation(ctx context.Context, ws repository.Workspac
 	return conv, nil
 }
 
+// Send runs the full query pipeline for one user turn. Retrieval is always
+// filtered to conversationID's own chunks — a conversation can only ever be
+// grounded in the documents that were added to it.
 func (s *Service) Send(
 	ctx context.Context,
 	ws repository.WorkspaceID,
 	conversationID string,
-	courseID string,
 	userContent string,
 	tokenCh chan<- StreamToken,
 ) (*MessageResult, error) {
-	conv, err := s.conversations.GetByID(ctx, ws, conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("chat: get conversation: %w", err)
-	}
-	_ = conv
-
-	if courseID != "" {
-		if _, err := s.courses.GetByID(ctx, ws, courseID); err != nil {
-			return nil, fmt.Errorf("chat: course access denied: %w", err)
-		}
+	// Verify the conversation exists and belongs to this workspace before
+	// doing anything else — this is the ownership check that stands in for
+	// the old course-access check.
+	if _, err := s.conversations.GetByID(ctx, ws, conversationID); err != nil {
+		return nil, fmt.Errorf("chat: conversation access denied: %w", err)
 	}
 
 	userMsg := &entities.Message{
@@ -181,7 +174,8 @@ func (s *Service) Send(
 		return nil, fmt.Errorf("chat: embed queries: %w", err)
 	}
 
-	// ── Step 5: Parallel Vector Search in Qdrant ─────────────────────────
+	// ── Step 5: Parallel Vector Search in Qdrant, scoped to this
+	//    conversation's own documents only ──────────────────────────────
 	type searchResult struct {
 		results []provider.VectorSearchResult
 		err     error
@@ -193,7 +187,7 @@ func (s *Service) Send(
 		searchWg.Add(1)
 		go func(v provider.Vector) {
 			defer searchWg.Done()
-			results, err := s.vectors.Search(ctx, courseID, v, 20)
+			results, err := s.vectors.Search(ctx, conversationID, v, 20)
 			searchCh <- searchResult{results: results, err: err}
 		}(vec)
 	}
@@ -218,7 +212,7 @@ func (s *Service) Send(
 	mergedResults := reciprocalRankFusion(allResultSets, 20)
 
 	if len(mergedResults) == 0 {
-		noContent := "I couldn't find anything relevant to that question in this course material."
+		noContent := "I couldn't find anything relevant to that question in this conversation's sources."
 		tokenCh <- StreamToken{Text: noContent, Done: true}
 		return &MessageResult{
 			MessageID:  s.ids.New(),
@@ -241,33 +235,11 @@ func (s *Service) Send(
 		chunkByID[c.ID] = c
 	}
 
-	// ── Step 8: Rerank ────────────────────────────────────────────────────
-	// To gain some speed, bypass reranker and use RRF order
-	// candidates := make([]provider.RerankCandidate, 0, len(mergedResults))
-	// for _, r := range mergedResults {
-	// 	if c, ok := chunkByID[r.ChunkID]; ok {
-	// 		candidates = append(candidates, provider.RerankCandidate{
-	// 			ChunkID:    c.ID,
-	// 			DocumentID: c.DocumentID,
-	// 			Content:    c.Content,
-	// 		})
-	// 	}
-	// }
-
-	// ranked, err := s.aiClient.Rerank(ctx, userContent, candidates)
-	// if err != nil {
-	// 	log.Printf("chat: rerank failed (using RRF order): %v", err)
-	// 	ranked = make([]provider.RankedChunk, len(mergedResults))
-	// 	for i, r := range mergedResults {
-	// 		ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
-	// 	}
-	// }
-	// ── Step 8: Qdrant RRF Ranking (Fast In-Memory Order) ───────────────
+	// ── Step 8: Qdrant RRF Ranking (Fast In-Memory Order) ────────────────
 	ranked := make([]provider.RankedChunk, len(mergedResults))
 	for i, r := range mergedResults {
 		ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
 	}
-
 
 	topK := 5
 	if len(ranked) < topK {
@@ -279,7 +251,6 @@ func (s *Service) Send(
 	rankedChunks := make([]*entities.Chunk, 0, len(ranked))
 	for _, rc := range ranked {
 		if c, ok := chunkByID[rc.ChunkID]; ok {
-			// Unique key using DocumentID + Content snippet
 			key := fmt.Sprintf("%s:%s", c.DocumentID, strings.TrimSpace(c.Content))
 			if !seenContent[key] {
 				seenContent[key] = true
@@ -294,7 +265,7 @@ func (s *Service) Send(
 	}
 	context_ := contextBuilder.String()
 	if context_ == "" {
-		context_ = "No relevant course material was found for this question."
+		context_ = "No relevant material was found for this question."
 	}
 
 	// ── Step 9: Stream Response Generation ───────────────────────────────
@@ -304,7 +275,7 @@ func (s *Service) Send(
 
 	for attempt := 1; attempt <= s.maxRetries; attempt++ {
 		prompt := provider.Prompt{
-			System: "You are a helpful study assistant. Answer questions based ONLY on the provided course material. Cite your sources.",
+			System: "You are a helpful study assistant. Answer questions based ONLY on the provided material. Cite your sources.",
 			Messages: []provider.PromptMessage{
 				{Role: "user", Content: fmt.Sprintf("Context:\n%s\n\nQuestion: %s", context_, userContent)},
 			},
@@ -325,12 +296,7 @@ func (s *Service) Send(
 			}
 		}
 
-		// score, _, err := s.evaluator.Evaluate(ctx, userContent, fullContent, []string{context_})
 		score := 8
-		// if err != nil {
-		// 	log.Printf("chat: evaluate: %v", err)
-		// 	score = 8
-		// }
 
 		if score > bestScore {
 			bestScore = score
@@ -391,8 +357,8 @@ func (s *Service) Send(
 	}, nil
 }
 
-func (s *Service) ListConversations(ctx context.Context, ws repository.WorkspaceID, projectID string) ([]*entities.Conversation, string, error) {
-	return s.conversations.ListByProject(ctx, ws, projectID, "", 50)
+func (s *Service) ListConversations(ctx context.Context, ws repository.WorkspaceID) ([]*entities.Conversation, string, error) {
+	return s.conversations.ListByWorkspace(ctx, ws, "", 50)
 }
 
 func (s *Service) GetChunk(ctx context.Context, id string) (*entities.Chunk, error) {
@@ -419,6 +385,6 @@ func (s *Service) DeleteConversation(ctx context.Context, ws repository.Workspac
 	return s.conversations.Delete(ctx, ws, id)
 }
 
-func (s *Service) UpdateConversationTitle(ctx context.Context, id string, title string) error {
-	return s.conversations.UpdateTitle(ctx, id, title)
+func (s *Service) UpdateConversationTitle(ctx context.Context, ws repository.WorkspaceID, id string, title string) error {
+	return s.conversations.UpdateTitle(ctx, ws, id, title)
 }

@@ -11,59 +11,93 @@ export async function apiLogin(email: string, password: string): Promise<AuthTok
 export async function apiMe(): Promise<User> { return request('/auth/me', { auth: true }); }
 export async function apiRefresh(refresh_token: string): Promise<Pick<AuthTokens, 'access_token' | 'refresh_token'>> { return request('/auth/refresh', { method: 'POST', body: { refresh_token } }); }
 
-export interface Project { id: string; name: string; created_at: string }
-export async function apiCreateProject(name: string): Promise<Project> { return request('/projects', { method: 'POST', body: { name }, auth: true }); }
-export async function apiListProjects(cursor?: string): Promise<{ items: Project[]; next_cursor?: string }> { return request(`/projects?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { auth: true }); }
-export async function apiGetProject(id: string): Promise<Project> { return request(`/projects/${id}`, { auth: true }); }
-
-export interface Collection { id: string; title: string; status: string; created_at: string }
-// Course is kept only as a TypeScript compatibility alias during the API rename.
-export type Course = Collection;
-export async function apiCreateCollection(projectId: string, title: string): Promise<Collection> { return request(`/projects/${projectId}/collections`, { method: 'POST', body: { title }, auth: true }); }
-export async function apiListCollections(projectId: string, cursor?: string): Promise<{ items: Collection[]; next_cursor?: string }> { return request(`/projects/${projectId}/collections?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { auth: true }); }
-export async function apiGetCollection(id: string): Promise<Collection> { return request(`/collections/${id}`, { auth: true }); }
-export async function apiRenameCollection(id: string, title: string): Promise<Collection> { return request(`/collections/${id}`, { method: 'PATCH', body: { title }, auth: true }); }
-export async function apiDeleteCollection(id: string): Promise<void> { return request(`/collections/${id}`, { method: 'DELETE', auth: true }); }
-export const apiCreateCourse = apiCreateCollection;
-export const apiListCourses = apiListCollections;
-export const apiGetProjectCourses = apiListCollections;
-export const apiGetCourse = apiGetCollection;
-export const apiRenameCourse = apiRenameCollection;
-export const apiDeleteCourse = apiDeleteCollection;
-
-export interface UploadResult { course_id: string; document_ids: string[] }
-export function apiUpload(collectionId: string, projectId: string, file: File, onProgress?: (pct: number) => void): Promise<UploadResult> {
-	const token = getToken(); const form = new FormData(); form.append('file', file); form.append('project_id', projectId);
-	return new Promise((resolve, reject) => { const xhr = new XMLHttpRequest(); xhr.open('POST', `${BASE}/collections/${collectionId}/upload`); if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`); xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(Math.round(event.loaded / event.total * 100)); }; xhr.onload = () => { if (xhr.status === 202) resolve(JSON.parse(xhr.responseText)); else reject(toApiError(xhr.status, xhr.responseText)); }; xhr.onerror = () => reject(new ApiError('Network error during upload', 0)); xhr.send(form); });
-}
-export interface AddSourceResult extends UploadResult { }
-export async function apiAddSource(collectionId: string, sourceType: 'url' | 'text' | 'video_url', options: { url?: string; content?: string; title?: string }): Promise<AddSourceResult> { return request(`/collections/${collectionId}/sources`, { method: 'POST', body: { source_type: sourceType, ...options }, auth: true }); }
-export interface JobStatus { id: string; stage: string; status: string; attempts: number; last_error?: string }
-export interface CourseStatus { course_id: string; status: string; jobs: JobStatus[] }
-export async function apiGetCourseStatus(id: string): Promise<CourseStatus> { return request(`/collections/${id}/status`, { auth: true }); }
-
-export interface Conversation { id: string; project_id: string; title: string; created_at: string }
+// ── Conversations ───────────────────────────────────────────────────────────
+// Every conversation belongs directly to the signed-in user (no project or
+// course wrapper). Each conversation owns its own knowledge base — the
+// Documents added to it are only ever visible/searchable within it.
+export interface Conversation { id: string; title: string; created_at: string; updated_at: string }
 export interface ConversationMessage {
 	id: string;
 	role: 'user' | 'assistant';
 	content: string;
 	citations?: Array<{ chunk_id: string; document_id: string; start_timestamp?: number; title?: string }>;
 }
-export async function apiCreateConversation(projectId: string): Promise<Conversation> { return request('/conversations', { method: 'POST', body: { project_id: projectId }, auth: true }); }
+export async function apiCreateConversation(): Promise<Conversation> { return request('/conversations', { method: 'POST', auth: true }); }
+export async function apiListConversations(): Promise<{ items: Conversation[] }> { return request('/conversations', { auth: true }); }
+export async function apiDeleteConversation(id: string): Promise<void> { return request(`/conversations/${id}`, { method: 'DELETE', auth: true }); }
+export async function apiUpdateConversationTitle(id: string, title: string): Promise<void> { return request(`/conversations/${id}`, { method: 'PATCH', body: { title }, auth: true }); }
 export async function apiGetConversationMessages(conversationId: string): Promise<{ items: ConversationMessage[] }> {
 	return request(`/conversations/${conversationId}/messages`, { auth: true });
 }
+
+// ── Documents (sources) ─────────────────────────────────────────────────────
+// One Document per source — a file, a URL, pasted text, or one file out of a
+// ZIP. Each tracks its own indexing status independently; there is no
+// collection-level "course" status anymore.
+export type DocumentStatus = 'UPLOADING' | 'UPLOADED' | 'PARSING' | 'NORMALIZING' | 'CHUNKING' | 'EMBEDDING' | 'INDEXED' | 'FAILED';
+export interface DocumentItem {
+	id: string;
+	original_filename: string;
+	source_type: string;
+	source_url?: string;
+	status: DocumentStatus;
+	created_at: string;
+}
+export interface UploadResult { conversation_id: string; document_ids: string[] }
+
+export async function apiListDocuments(conversationId: string): Promise<{ items: DocumentItem[] }> {
+	return request(`/conversations/${conversationId}/documents`, { auth: true });
+}
+export async function apiDeleteDocument(conversationId: string, documentId: string): Promise<void> {
+	return request(`/conversations/${conversationId}/documents/${documentId}`, { method: 'DELETE', auth: true });
+}
+
+// Uploads a single file (pdf/docx/txt/md/srt/vtt) or a .zip archive — the
+// backend auto-detects .zip and fans it out into one Document per supported
+// file inside it.
+export function apiUploadDocument(conversationId: string, file: File, onProgress?: (pct: number) => void): Promise<UploadResult> {
+	const token = getToken();
+	const form = new FormData();
+	form.append('file', file);
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest();
+		xhr.open('POST', `${BASE}/conversations/${conversationId}/documents`);
+		if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+		xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(Math.round(event.loaded / event.total * 100)); };
+		xhr.onload = () => { if (xhr.status === 202) resolve(JSON.parse(xhr.responseText)); else reject(toApiError(xhr.status, xhr.responseText)); };
+		xhr.onerror = () => reject(new ApiError('Network error during upload', 0));
+		xhr.send(form);
+	});
+}
+
+// Adds a YouTube/web URL or pasted text as a source (the other two tabs of
+// the "Add Document" modal — file/zip uploads use apiUploadDocument above).
+export async function apiAddSource(
+	conversationId: string,
+	sourceType: 'url' | 'text' | 'video_url',
+	options: { url?: string; content?: string; title?: string }
+): Promise<UploadResult> {
+	return request(`/conversations/${conversationId}/documents/source`, { method: 'POST', body: { source_type: sourceType, ...options }, auth: true });
+}
+
+export interface JobStatus { id: string; stage: string; status: string; attempts: number; last_error?: string }
+export interface DocumentStatusDetail { document_id: string; status: DocumentStatus; jobs: JobStatus[] }
+export async function apiGetDocumentStatus(documentId: string): Promise<DocumentStatusDetail> {
+	return request(`/documents/${documentId}/status`, { auth: true });
+}
+
+// ── Chunks (citations) ──────────────────────────────────────────────────────
 export interface ChunkDetail {
-  id: string;
-  document_id: string;
-  content: string;
-  title?: string;
-  start_timestamp?: number;
-  end_timestamp?: number;
-  page_number?: number;
-  document_name?: string;
-  source_type?: string;
-  source_url?: string;
+	id: string;
+	document_id: string;
+	content: string;
+	title?: string;
+	start_timestamp?: number;
+	end_timestamp?: number;
+	page_number?: number;
+	document_name?: string;
+	source_type?: string;
+	source_url?: string;
 }
 export async function apiGetChunk(chunkId: string): Promise<ChunkDetail> { return request(`/chunks/${chunkId}`, { auth: true }); }
 export async function apiHealth(): Promise<{ status: string }> { return request('/healthz'); }
@@ -82,12 +116,3 @@ function toApiError(status: number, payload: string) { try { const data = JSON.p
 export function getToken(): string | null { return typeof window === 'undefined' ? null : localStorage.getItem('access_token'); }
 export function setTokens(tokens: Pick<AuthTokens, 'access_token' | 'refresh_token'>): void { localStorage.setItem('access_token', tokens.access_token); localStorage.setItem('refresh_token', tokens.refresh_token); }
 export function clearTokens(): void { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); }
-export async function apiListConversations(projectId: string): Promise<{ items: Conversation[] }> {
-	return request(`/projects/${projectId}/conversations`, { auth: true });
-}
-export async function apiDeleteConversation(id: string): Promise<void> {
-	return request(`/conversations/${id}`, { method: 'DELETE', auth: true });
-}
-export async function apiUpdateConversationTitle(id: string, title: string): Promise<void> {
-	return request(`/conversations/${id}`, { method: 'PATCH', body: { title }, auth: true });
-}

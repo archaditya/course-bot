@@ -18,17 +18,12 @@ func NewChatHandler(svc *chat.Service) *ChatHandler {
 
 func (h *ChatHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /conversations", h.createConversation)
-	mux.HandleFunc("GET /projects/{id}/conversations", h.listConversations)
+	mux.HandleFunc("GET /conversations", h.listConversations)
 	mux.HandleFunc("POST /conversations/{id}/messages", h.sendMessage)
 	mux.HandleFunc("GET /chunks/{id}", h.getChunk)
 	mux.HandleFunc("GET /conversations/{id}/messages", h.getConversationMessages)
 	mux.HandleFunc("DELETE /conversations/{id}", h.deleteConversation)
 	mux.HandleFunc("PATCH /conversations/{id}", h.updateConversationTitle)
-}
-
-type createConversationRequest struct {
-	ProjectID string `json:"project_id"`
-	CourseID  string `json:"course_id"`
 }
 
 func (h *ChatHandler) createConversation(w http.ResponseWriter, r *http.Request) {
@@ -37,27 +32,20 @@ func (h *ChatHandler) createConversation(w http.ResponseWriter, r *http.Request)
 		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
 		return
 	}
-	var req createConversationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ProjectID == "" {
-		WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "project_id is required.")
-		return
-	}
-	conv, err := h.svc.CreateConversation(r.Context(), claims.WorkspaceID, req.ProjectID)
+	conv, err := h.svc.CreateConversation(r.Context(), claims.WorkspaceID)
 	if err != nil {
-		notFoundOrInternal(w, err, "PROJECT_NOT_FOUND", "Project not found.")
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create conversation.")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":         conv.ID,
-		"project_id": conv.ProjectID,
 		"title":      conv.Title,
 		"created_at": conv.CreatedAt,
 	})
 }
 
 type sendMessageRequest struct {
-	Content  string `json:"content"`
-	CourseID string `json:"course_id"`
+	Content string `json:"content"`
 }
 
 type updateConversationTitleRequest struct {
@@ -79,7 +67,6 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -90,10 +77,8 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Token channel — the service writes here as tokens arrive
 	tokenCh := make(chan chat.StreamToken, 128)
 
-	// Run pipeline in background; we forward tokens to SSE below
 	var result *chat.MessageResult
 	var pipeErr error
 	done := make(chan struct{})
@@ -103,13 +88,11 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 			r.Context(),
 			claims.WorkspaceID,
 			r.PathValue("id"),
-			req.CourseID,
 			req.Content,
 			tokenCh,
 		)
 	}()
 
-	// Forward tokens as SSE events
 	for token := range tokenCh {
 		if token.Text != "" {
 			fmt.Fprintf(w, "data: %s\n\n", token.Text)
@@ -127,7 +110,6 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send final result event with citations
 	if result != nil {
 		resultJSON, _ := json.Marshal(result)
 		fmt.Fprintf(w, "data: [RESULT] %s\n\n", string(resultJSON))
@@ -143,10 +125,9 @@ func (h *ChatHandler) listConversations(w http.ResponseWriter, r *http.Request) 
 		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
 		return
 	}
-	projectID := r.PathValue("id")
-	convs, _, err := h.svc.ListConversations(r.Context(), claims.WorkspaceID, projectID)
+	convs, _, err := h.svc.ListConversations(r.Context(), claims.WorkspaceID)
 	if err != nil {
-		notFoundOrInternal(w, err, "PROJECT_NOT_FOUND", "Project not found.")
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not load conversations.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": convs})
@@ -167,8 +148,8 @@ func (h *ChatHandler) getChunk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":              chunk.ID,
 		"document_id":     chunk.DocumentID,
-		"document_name":   chunk.DocumentName,   // File name e.g. "03_props-style-props.vtt"
-		"source_type":     chunk.SourceType,     // "vtt", "pdf", etc.
+		"document_name":   chunk.DocumentName,
+		"source_type":     chunk.SourceType,
 		"source_url":      chunk.SourceURL,
 		"content":         chunk.Content,
 		"title":           chunk.Title,
@@ -208,7 +189,7 @@ func (h *ChatHandler) deleteConversation(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *ChatHandler) updateConversationTitle(w http.ResponseWriter, r *http.Request) {
-	_, ok := ClaimsFromContext(r.Context())
+	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
 		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
 		return
@@ -220,7 +201,7 @@ func (h *ChatHandler) updateConversationTitle(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := h.svc.UpdateConversationTitle(r.Context(), convID, req.Title); err != nil {
+	if err := h.svc.UpdateConversationTitle(r.Context(), claims.WorkspaceID, convID, req.Title); err != nil {
 		notFoundOrInternal(w, err, "CONVERSATION_NOT_FOUND", "Conversation not found.")
 		return
 	}

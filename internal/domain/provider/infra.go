@@ -35,13 +35,13 @@ type QueuedEvent struct {
 }
 
 // VectorPoint is what gets written to the vector store: a vector plus the
-// minimal payload needed for filtered search (course_id, timestamp) — see
-// docs/07-storage.md and docs/decisions/ADR-002-qdrant.md. Only Go Workers
-// ever call Upsert (docs/07-storage.md#access-patterns); the AI Service
-// reads via Search at query time through a Go proxy, never writes.
+// minimal payload needed for filtered search (conversation_id, document_id,
+// timestamp). Only Go Workers ever call Upsert; the Go API's chat service
+// reads via Search at query time, never writes.
 type VectorPoint struct {
 	ChunkID        string
-	CourseID       string
+	ConversationID string
+	DocumentID     string
 	StartTimestamp *int
 	Vector         Vector
 }
@@ -52,13 +52,21 @@ type VectorSearchResult struct {
 }
 
 // VectorStore is the Qdrant abstraction. Treated as a derived, rebuildable
-// index (ADR-002): safe to wipe and rebuild from Postgres + R2 at any time,
-// which is why Upsert takes full points rather than supporting partial
-// mutation.
+// index: safe to wipe and rebuild from Postgres + R2 at any time, which is
+// why Upsert takes full points rather than supporting partial mutation.
+//
+// Search always requires a non-empty conversationID and always filters on
+// it — there is no "search everything" fallback. Each conversation is its
+// own notebook: it only ever retrieves from the documents added to it.
+// That fallback (an optional/empty filter) is what let one conversation's
+// query surface another conversation's — or another workspace's —
+// citations; removing the escape hatch removes the bug at the type level,
+// not just at today's call sites.
 type VectorStore interface {
 	Upsert(ctx context.Context, points []VectorPoint) error
-	Search(ctx context.Context, courseID string, query Vector, topK int) ([]VectorSearchResult, error)
-	DeleteByCourse(ctx context.Context, courseID string) error
+	Search(ctx context.Context, conversationID string, query Vector, topK int) ([]VectorSearchResult, error)
+	DeleteByDocument(ctx context.Context, documentID string) error
+	DeleteByConversation(ctx context.Context, conversationID string) error
 }
 
 // ObjectStore is the R2 abstraction (docs/07-storage.md). Raw files in

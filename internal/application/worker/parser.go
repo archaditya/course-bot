@@ -26,7 +26,6 @@ type ParserWorker struct {
 }
 
 func NewParserWorker(
-	courses repository.CourseRepository,
 	jobs repository.JobRepository,
 	documents repository.DocumentRepository,
 	objects provider.ObjectStore,
@@ -36,7 +35,7 @@ func NewParserWorker(
 	allowedURLDomains []string,
 ) *ParserWorker {
 	return &ParserWorker{
-		base:              base{courses: courses, jobs: jobs, queue: queue, ids: ids},
+		base:              base{documents: documents, jobs: jobs, queue: queue, ids: ids},
 		documents:         documents,
 		objects:           objects,
 		aiClient:          aiClient,
@@ -73,7 +72,7 @@ func (w *ParserWorker) Run(ctx context.Context) error {
 }
 
 func (w *ParserWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
-	courseID, _ := qe.Payload["course_id"].(string)
+	conversationID, _ := qe.Payload["conversation_id"].(string)
 	docID, _ := qe.Payload["document_id"].(string)
 	jobID, _ := qe.Payload["job_id"].(string)
 
@@ -88,14 +87,14 @@ func (w *ParserWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 			log.Printf("parser: start job: %v", err)
 			return
 		}
-		if err := w.process(ctx, courseID, docID, qe.TraceID); err == nil {
-			if err := w.succeedJob(ctx, "", job, entities.CourseStatusChunking); err != nil {
+		if err := w.process(ctx, conversationID, docID, qe.TraceID); err == nil {
+			if err := w.succeedJob(ctx, job, entities.DocumentStatusChunking); err != nil {
 				log.Printf("metadata: complete job %s: %v", job.ID, err)
 				return
 			}
 			return
 		} else {
-			w.failJob(ctx, "", job, "parsing", courseID, qe.TraceID, err)
+			w.failJob(ctx, job, "parsing", conversationID, qe.TraceID, err)
 			if job.Status == entities.JobStatusDeadLettered {
 				return
 			}
@@ -103,8 +102,8 @@ func (w *ParserWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
 	}
 }
 
-func (w *ParserWorker) process(ctx context.Context, courseID, docID, traceID string) error {
-	doc, err := w.documents.GetByID(ctx, docID)
+func (w *ParserWorker) process(ctx context.Context, conversationID, docID, traceID string) error {
+	doc, err := w.documents.GetByIDInternal(ctx, docID)
 	if err != nil {
 		return fmt.Errorf("parser: get document: %w", err)
 	}
@@ -166,7 +165,7 @@ func (w *ParserWorker) process(ctx context.Context, courseID, docID, traceID str
 	if err != nil {
 		return fmt.Errorf("parser: marshal: %w", err)
 	}
-	normalizedKey := fmt.Sprintf("processed/%s/%s/normalized.json", courseID, docID)
+	normalizedKey := fmt.Sprintf("processed/%s/%s/normalized.json", conversationID, docID)
 	if err := w.objects.Put(ctx, normalizedKey, data, "application/json"); err != nil {
 		return fmt.Errorf("parser: put processed: %w", err)
 	}
@@ -178,8 +177,8 @@ func (w *ParserWorker) process(ctx context.Context, courseID, docID, traceID str
 	chunkJobID := w.ids.New()
 	chunkJob := &entities.Job{
 		ID:              chunkJobID,
-		CourseID:        courseID,
-		DocumentID:      &docID,
+		ConversationID:  conversationID,
+		DocumentID:      docID,
 		Stage:           entities.JobStageChunk,
 		Status:          entities.JobStatusQueued,
 		MaxAttempts:     3,
@@ -192,10 +191,10 @@ func (w *ParserWorker) process(ctx context.Context, courseID, docID, traceID str
 	return w.queue.Publish(ctx, "pipeline:parse", provider.Event{
 		Name: "NORMALIZED",
 		Payload: map[string]any{
-			"course_id":      courseID,
-			"document_id":    docID,
-			"normalized_ref": normalizedKey,
-			"job_id":         chunkJobID,
+			"conversation_id": conversationID,
+			"document_id":     docID,
+			"normalized_ref":  normalizedKey,
+			"job_id":          chunkJobID,
 		},
 		TraceID: traceID,
 	})
