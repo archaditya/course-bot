@@ -110,7 +110,11 @@ class GroqGuardrail(GuardrailProvider):
 
         try:
             logger.info(f"🛡️ Groq PII Check [{settings.groq_llm_fast_model}]")
-            prompt = f"Detect if text contains PII. Return JSON: {{\"has_pii\": bool, \"detected_types\": []}}. Text: {text[:1000]}"
+            # prompt = f"Detect if text contains PII. Return JSON: {{\"has_pii\": bool, \"detected_types\": []}}. Text: {text[:1000]}"
+            prompt = f"""Detect if text contains SENSITIVE PII (credit card numbers, SSN, bank details, passwords, secret API keys). 
+Do NOT flag casual user names, greetings, or job roles.
+Return JSON: {{"has_pii": bool, "detected_types": []}}. 
+Text: {text[:1000]}"""
             response = await self.client.chat.completions.create(
                 model=settings.groq_llm_fast_model,
                 messages=[{"role": "user", "content": prompt}],

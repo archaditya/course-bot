@@ -573,13 +573,23 @@ export default function ChatPage() {
           } else if (raw.startsWith("[RESULT]")) {
             try {
               const resObj = JSON.parse(raw.replace("[RESULT]", "").trim());
-              if (resObj.citations) citationsBuffer = resObj.citations;
+              if (resObj.citations && resObj.citations.length > 0) {
+                citationsBuffer = resObj.citations;
+                setMessages((prev) =>
+                  prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, citations: resObj.citations } : msg))
+                );
+              }
             } catch { /* ignore parse error */ }
           } else if (raw.startsWith("[ERROR:")) {
             assistantContent += `\n\n*Error: ${raw}*`;
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: assistantContent } : msg))
+            );
           } else {
             assistantContent += raw;
-            setMessages((prev) => prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: assistantContent } : msg)));
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: assistantContent, citations: citationsBuffer } : msg))
+            );
           }
         }
       }
