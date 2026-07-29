@@ -127,9 +127,11 @@ class OpenAIGuardrail(GuardrailProvider):
         self.client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
     
     async def check_pii(self, text: str) -> PIIResult:
-        prompt = f"""Detect if this text contains PII (email, phone, SSN, credit card, etc.). 
-Return JSON with: {{"has_pii": bool, "detected_types": [string list]}}.
-
+#         prompt = f"""Detect if this text contains PII (email, phone, SSN, credit card, etc.). 
+# Return JSON with: {{"has_pii": bool, "detected_types": [string list]}}.
+        prompt = f"""Detect if this text contains SENSITIVE PII (credit card numbers, SSN, bank details, passwords, secret API keys). 
+Do NOT flag casual user names, greetings, or job roles.
+Return JSON with: {{"has_pii": bool, "detected_types": [string list]}}. 
 Text: {text[:1000]}
 """
         
