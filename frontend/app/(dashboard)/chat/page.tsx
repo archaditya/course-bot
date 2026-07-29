@@ -32,6 +32,14 @@ function formatTime(secs?: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function cleanFilename(name: string): string {
+  if (!name) return "this source";
+  return name
+    .replace(/^\d+[\.\-_]\s*/, "") // Strips numeric prefixes like "11. "
+    .replace(/\.(mp4|pdf|vtt|srt|docx|txt|html|md)$/i, "") // Strips file extensions only
+    .trim();
+}
+
 function parseTimestampInSeconds(chunk: ChunkDetail): number {
   if (typeof chunk.start_timestamp === "number" && chunk.start_timestamp > 0) {
     return chunk.start_timestamp;
@@ -362,6 +370,9 @@ export default function ChatPage() {
   const [sourcePanelTab, setSourcePanelTab] = useState<"overview" | "retrieved">("retrieved");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Source Summary Modal State
+  const [selectedDocSummary, setSelectedDocSummary] = useState<DocumentItem | null>(null);
 
   // ── Conversations (left sidebar) ─────────────────────────────────────
   const { data: conversationsData } = useQuery<{ items: Conversation[] }>({
@@ -760,6 +771,42 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* ── Dynamic NotebookLM Suggested Questions from Indexed Documents ── */}
+        {messages.length === 0 && documents.some((d) => d.status === "INDEXED") && (
+          <div style={{ padding: "0 clamp(16px, 5vw, 64px) 10px", display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+            {documents
+              .filter((d) => d.status === "INDEXED")
+              .flatMap((d) => {
+                const title = cleanFilename(d.original_filename);
+                return [
+                  `What are the key concepts in ${title}?`,
+                  `Summarize the main takeaways from ${title}`,
+                ];
+              })
+              .slice(0, 3)
+              .map((q, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setInput(q)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: "var(--radius-full)",
+                    background: "var(--color-surface-container-high)",
+                    border: "1px solid var(--color-accent-border)",
+                    color: "var(--color-on-surface)",
+                    fontSize: "12px",
+                    fontFamily: "var(--font-geist)",
+                    cursor: "pointer",
+                    transition: "all var(--transition-fast)",
+                  }}
+                >
+                  💡 {q}
+                </button>
+              ))}
+          </div>
+        )}
+
         <form onSubmit={handleSend} style={{ padding: "16px clamp(16px, 5vw, 64px) 20px", borderTop: "1px solid var(--color-outline-variant)", display: "flex", gap: "10px", background: "var(--color-surface-dim)" }}>
           <input
             type="text"
@@ -807,7 +854,7 @@ export default function ChatPage() {
             </p>
           ) : (
             documents.map((d) => (
-              <div key={d.id} style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "9px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-outline-variant)", background: "var(--color-surface-container-low)" }}>
+              <div key={d.id} onClick={() => setSelectedDocSummary(d)} style={{ cursor: "pointer", display: "flex", alignItems: "flex-start", gap: "8px", padding: "9px 10px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-outline-variant)", background: "var(--color-surface-container-low)" }}>
                 <span style={{ marginTop: "1px", color: "var(--color-primary)", flexShrink: 0 }}>
                   <SourceTypeIcon kind={d.source_type} size={16} />
                 </span>
@@ -1026,6 +1073,86 @@ export default function ChatPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── NotebookLM 1:1 Source Guide Modal ── */}
+      <AnimatePresence>
+        {selectedDocSummary && (
+          <div
+            onClick={() => setSelectedDocSummary(null)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.7)",
+              zIndex: 110,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "20px",
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "100%",
+                maxWidth: "620px",
+                background: "var(--color-surface-container-low)",
+                border: "1px solid var(--color-outline-variant)",
+                borderRadius: "var(--radius-xl)",
+                padding: "24px",
+                boxShadow: "var(--shadow-lg)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+                <div>
+                  <span style={{ fontSize: "11px", fontFamily: "var(--font-geist)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--color-tertiary)" }}>
+                    ✨ Source guide
+                  </span>
+                  <h3 style={{ margin: "4px 0 0 0", fontFamily: "var(--font-geist)", fontSize: "17px", fontWeight: 700, color: "var(--color-on-surface)" }}>
+                    {selectedDocSummary.original_filename}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedDocSummary(null)}
+                  style={{ background: "none", border: "none", color: "var(--color-on-surface-variant)", cursor: "pointer" }}
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+
+              <div style={{ background: "var(--color-surface-container-lowest)", padding: "18px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-outline-variant)", maxHeight: "360px", overflowY: "auto" }}>
+                <p style={{ fontSize: "13.5px", lineHeight: 1.7, margin: 0, color: "var(--color-on-surface)", whiteSpace: "pre-wrap" }}>
+                  {selectedDocSummary.summary || "Generating AI Source Guide summary..."}
+                </p>
+              </div>
+
+              <div style={{ marginTop: "18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <StatusPill status={selectedDocSummary.status} />
+                <button
+                  type="button"
+                  onClick={() => setSelectedDocSummary(null)}
+                  style={{
+                    padding: "8px 20px",
+                    borderRadius: "var(--radius-md)",
+                    background: "var(--color-primary)",
+                    color: "var(--color-on-primary)",
+                    border: "none",
+                    fontFamily: "var(--font-geist)",
+                    fontWeight: 600,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Done
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

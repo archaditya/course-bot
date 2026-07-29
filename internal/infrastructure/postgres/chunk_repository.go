@@ -48,9 +48,12 @@ func (r *chunkRepository) CreateBatch(ctx context.Context, chunks []*entities.Ch
 
 func (r *chunkRepository) ListByDocument(ctx context.Context, documentID string) ([]*entities.Chunk, error) {
 	const q = `
-		SELECT id, document_id, conversation_id, start_timestamp, end_timestamp, page_number,
-		       title, summary, content, token_count, embedding_version, vector_ref, created_at
-		FROM chunks WHERE document_id = $1 ORDER BY created_at`
+		SELECT c.id, c.document_id, c.conversation_id, c.start_timestamp, c.end_timestamp, c.page_number,
+		       c.title, c.summary, c.content, c.token_count, c.embedding_version, c.vector_ref, c.created_at,
+		       COALESCE(d.original_filename, ''), COALESCE(d.source_type, ''), COALESCE(d.source_url, '')
+		FROM chunks c
+		LEFT JOIN documents d ON c.document_id = d.id
+		WHERE c.document_id = $1 ORDER BY c.created_at`
 	rows, err := r.db.QueryContext(ctx, q, documentID)
 	if err != nil {
 		return nil, fmt.Errorf("chunk: list: %w", err)

@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"archadilm/internal/domain/entities"
 	"archadilm/internal/domain/provider"
@@ -88,9 +89,9 @@ func (s *Service) CreateConversation(ctx context.Context, ws repository.Workspac
 	return conv, nil
 }
 
-// Send runs the full query pipeline for one user turn. Retrieval is always
-// filtered to conversationID's own chunks — a conversation can only ever be
-// grounded in the documents that were added to it.
+// Send runs the query pipeline for one user turn. If the query is a simple
+// greeting or smalltalk, it takes the fast-path route. For knowledge queries,
+// it executes the full 10-step RAG retrieval & grounding pipeline.
 func (s *Service) Send(
 	ctx context.Context,
 	ws repository.WorkspaceID,
@@ -98,13 +99,14 @@ func (s *Service) Send(
 	userContent string,
 	tokenCh chan<- StreamToken,
 ) (*MessageResult, error) {
-	// Verify the conversation exists and belongs to this workspace before
-	// doing anything else — this is the ownership check that stands in for
-	// the old course-access check.
+	startTime := time.Now()
+
+	// Verify conversation exists and belongs to workspace
 	if _, err := s.conversations.GetByID(ctx, ws, conversationID); err != nil {
 		return nil, fmt.Errorf("chat: conversation access denied: %w", err)
 	}
 
+	// Persist User Message to Postgres
 	userMsg := &entities.Message{
 		ID:             s.ids.New(),
 		ConversationID: conversationID,
@@ -116,166 +118,187 @@ func (s *Service) Send(
 		return nil, fmt.Errorf("chat: save user message: %w", err)
 	}
 
-	// ── Step 1: Guardrails ───────────────────────────────────────────────
-	injResult, err := s.guardrails.CheckInjection(ctx, userContent)
-	if err != nil {
-		log.Printf("chat: injection check: %v", err)
-	} else if injResult.IsInjection {
-		return nil, fmt.Errorf("chat: query rejected: prompt injection detected")
-	}
+	// ── Step 0: Fast Intent Classification & Route Decision ─────────────────
+	// Check for simple greetings or casual smalltalk before running heavy guardrails/search
+	cleanInput := strings.TrimSpace(strings.ToLower(userContent))
+	isFastRoute := strings.HasPrefix(cleanInput, "hi") ||
+		strings.HasPrefix(cleanInput, "hello") ||
+		strings.HasPrefix(cleanInput, "hey") ||
+		strings.HasPrefix(cleanInput, "thanks") ||
+		cleanInput == "how are you"
 
-	piiResult, err := s.guardrails.CheckPII(ctx, userContent)
-	if err != nil {
-		log.Printf("chat: pii check: %v", err)
-	} else if piiResult.ContainsPII {
-		return nil, fmt.Errorf("chat: query rejected: PII detected in input")
-	}
+	var context_ string
+	var rankedChunks []*entities.Chunk
+	usedVector := false
 
-	// ── Step 2 & 3: Concurrent Query Enhancement + HyDE Document ─────────
-	var (
-		wg                  sync.WaitGroup
-		enhanced            *llm.QueryEnhancement
-		hydeDoc             string
-		errEnhance, errHyde error
-	)
+	if isFastRoute {
+		// FAST-PATH ROUTE: Skip Guardrails, HyDE & Qdrant Search (<200ms TTFT)
+		context_ = "User is engaging in casual greeting or smalltalk. Respond warmly and concisely."
+	} else {
+		// KNOWLEDGE / MEMORY ROUTE: Execute full RAG pipeline
 
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		enhanced, errEnhance = s.aiClient.EnhanceQuery(ctx, userContent)
-	}()
-	go func() {
-		defer wg.Done()
-		hydeDoc, errHyde = s.aiClient.HydeDocument(ctx, userContent)
-	}()
-	wg.Wait()
-
-	queryVariants := []string{userContent}
-	if errEnhance != nil {
-		log.Printf("chat: query enhancement failed (using original): %v", errEnhance)
-	} else if enhanced != nil {
-		if enhanced.StepBack != "" {
-			queryVariants = append(queryVariants, enhanced.StepBack)
+		// ── Step 1: Guardrails ───────────────────────────────────────────────
+		injResult, err := s.guardrails.CheckInjection(ctx, userContent)
+		if err != nil {
+			log.Printf("chat: injection check: %v", err)
+		} else if injResult.IsInjection {
+			return nil, fmt.Errorf("chat: query rejected: prompt injection detected")
 		}
-		if enhanced.Rewritten != "" {
-			queryVariants = append(queryVariants, enhanced.Rewritten)
+
+		piiResult, err := s.guardrails.CheckPII(ctx, userContent)
+		if err != nil {
+			log.Printf("chat: pii check: %v", err)
+		} else if piiResult.ContainsPII {
+			return nil, fmt.Errorf("chat: query rejected: PII detected in input")
 		}
-		queryVariants = append(queryVariants, enhanced.SubQueries...)
-	}
-	if errHyde != nil {
-		log.Printf("chat: hyde failed: %v", errHyde)
-	} else if hydeDoc != "" {
-		queryVariants = append(queryVariants, hydeDoc)
-	}
 
-	// ── Step 4: Batch Vector Embeddings ──────────────────────────────────
-	allVecs, err := s.embedder.Embed(ctx, queryVariants)
-	if err != nil {
-		return nil, fmt.Errorf("chat: embed queries: %w", err)
-	}
+		// ── Step 2 & 3: Concurrent Query Enhancement + HyDE Document ─────────
+		usedVector = true
+		var (
+			wg                  sync.WaitGroup
+			enhanced            *llm.QueryEnhancement
+			hydeDoc             string
+			errEnhance, errHyde error
+		)
 
-	// ── Step 5: Parallel Vector Search in Qdrant, scoped to this
-	//    conversation's own documents only ──────────────────────────────
-	type searchResult struct {
-		results []provider.VectorSearchResult
-		err     error
-	}
-	searchCh := make(chan searchResult, len(allVecs))
-	var searchWg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			enhanced, errEnhance = s.aiClient.EnhanceQuery(ctx, userContent)
+		}()
+		go func() {
+			defer wg.Done()
+			hydeDoc, errHyde = s.aiClient.HydeDocument(ctx, userContent)
+		}()
+		wg.Wait()
 
-	for _, vec := range allVecs {
-		searchWg.Add(1)
-		go func(v provider.Vector) {
-			defer searchWg.Done()
-			results, err := s.vectors.Search(ctx, conversationID, v, 20)
-			searchCh <- searchResult{results: results, err: err}
-		}(vec)
-	}
-
-	go func() {
-		searchWg.Wait()
-		close(searchCh)
-	}()
-
-	var allResultSets [][]provider.VectorSearchResult
-	for sr := range searchCh {
-		if sr.err != nil {
-			log.Printf("chat: vector search error: %v", sr.err)
-			continue
+		queryVariants := []string{userContent}
+		if errEnhance != nil {
+			log.Printf("chat: query enhancement failed (using original): %v", errEnhance)
+		} else if enhanced != nil {
+			if enhanced.StepBack != "" {
+				queryVariants = append(queryVariants, enhanced.StepBack)
+			}
+			if enhanced.Rewritten != "" {
+				queryVariants = append(queryVariants, enhanced.Rewritten)
+			}
+			queryVariants = append(queryVariants, enhanced.SubQueries...)
 		}
-		if len(sr.results) > 0 {
-			allResultSets = append(allResultSets, sr.results)
+		if errHyde != nil {
+			log.Printf("chat: hyde failed: %v", errHyde)
+		} else if hydeDoc != "" {
+			queryVariants = append(queryVariants, hydeDoc)
 		}
-	}
 
-	// ── Step 6: Reciprocal Rank Fusion ────────────────────────────────────
-	mergedResults := reciprocalRankFusion(allResultSets, 20)
+		// ── Step 4: Batch Vector Embeddings ──────────────────────────────────
+		allVecs, err := s.embedder.Embed(ctx, queryVariants)
+		if err != nil {
+			return nil, fmt.Errorf("chat: embed queries: %w", err)
+		}
 
-	if len(mergedResults) == 0 {
-		noContent := "I couldn't find anything relevant to that question in this conversation's sources."
-		tokenCh <- StreamToken{Text: noContent, Done: true}
-		return &MessageResult{
-			MessageID:  s.ids.New(),
-			Content:    noContent,
-			Confidence: "normal",
-		}, nil
-	}
+		// ── Step 5: Parallel Vector Search in Qdrant ─────────────────────────
+		type searchResult struct {
+			results []provider.VectorSearchResult
+			err     error
+		}
+		searchCh := make(chan searchResult, len(allVecs))
+		var searchWg sync.WaitGroup
 
-	// ── Step 7: Fetch Chunk Content ───────────────────────────────────────
-	chunkIDs := make([]string, len(mergedResults))
-	for i, r := range mergedResults {
-		chunkIDs[i] = r.ChunkID
-	}
-	fetchedChunks, err := s.chunks.GetByIDs(ctx, chunkIDs)
-	if err != nil {
-		return nil, fmt.Errorf("chat: fetch chunk content: %w", err)
-	}
-	chunkByID := make(map[string]*entities.Chunk, len(fetchedChunks))
-	for _, c := range fetchedChunks {
-		chunkByID[c.ID] = c
-	}
+		for _, vec := range allVecs {
+			searchWg.Add(1)
+			go func(v provider.Vector) {
+				defer searchWg.Done()
+				results, err := s.vectors.Search(ctx, conversationID, v, 20)
+				searchCh <- searchResult{results: results, err: err}
+			}(vec)
+		}
 
-	// ── Step 8: Qdrant RRF Ranking (Fast In-Memory Order) ────────────────
-	ranked := make([]provider.RankedChunk, len(mergedResults))
-	for i, r := range mergedResults {
-		ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
-	}
+		go func() {
+			searchWg.Wait()
+			close(searchCh)
+		}()
 
-	topK := 5
-	if len(ranked) < topK {
-		topK = len(ranked)
-	}
-	ranked = ranked[:topK]
-
-	seenContent := make(map[string]bool)
-	rankedChunks := make([]*entities.Chunk, 0, len(ranked))
-	for _, rc := range ranked {
-		if c, ok := chunkByID[rc.ChunkID]; ok {
-			key := fmt.Sprintf("%s:%s", c.DocumentID, strings.TrimSpace(c.Content))
-			if !seenContent[key] {
-				seenContent[key] = true
-				rankedChunks = append(rankedChunks, c)
+		var allResultSets [][]provider.VectorSearchResult
+		for sr := range searchCh {
+			if sr.err != nil {
+				log.Printf("chat: vector search error: %v", sr.err)
+				continue
+			}
+			if len(sr.results) > 0 {
+				allResultSets = append(allResultSets, sr.results)
 			}
 		}
-	}
 
-	var contextBuilder strings.Builder
-	for i, c := range rankedChunks {
-		fmt.Fprintf(&contextBuilder, "--- Excerpt %d ---\n%s\n\n", i+1, c.Content)
-	}
-	context_ := contextBuilder.String()
-	if context_ == "" {
-		context_ = "No relevant material was found for this question."
+		// ── Step 6: Reciprocal Rank Fusion ────────────────────────────────────
+		mergedResults := reciprocalRankFusion(allResultSets, 20)
+
+		if len(mergedResults) == 0 {
+			noContent := "I couldn't find anything relevant to that question in this conversation's sources."
+			tokenCh <- StreamToken{Text: noContent, Done: true}
+			return &MessageResult{
+				MessageID:  s.ids.New(),
+				Content:    noContent,
+				Confidence: "normal",
+			}, nil
+		}
+
+		// ── Step 7: Fetch Chunk Content from Postgres ─────────────────────────
+		chunkIDs := make([]string, len(mergedResults))
+		for i, r := range mergedResults {
+			chunkIDs[i] = r.ChunkID
+		}
+		fetchedChunks, err := s.chunks.GetByIDs(ctx, chunkIDs)
+		if err != nil {
+			return nil, fmt.Errorf("chat: fetch chunk content: %w", err)
+		}
+		chunkByID := make(map[string]*entities.Chunk, len(fetchedChunks))
+		for _, c := range fetchedChunks {
+			chunkByID[c.ID] = c
+		}
+
+		// ── Step 8: Qdrant RRF Ranking (Fast In-Memory Order) ────────────────
+		ranked := make([]provider.RankedChunk, len(mergedResults))
+		for i, r := range mergedResults {
+			ranked[i] = provider.RankedChunk{ChunkID: r.ChunkID, Score: r.Score}
+		}
+
+		topK := 5
+		if len(ranked) < topK {
+			topK = len(ranked)
+		}
+		ranked = ranked[:topK]
+
+		seenContent := make(map[string]bool)
+		for _, rc := range ranked {
+			if c, ok := chunkByID[rc.ChunkID]; ok {
+				key := fmt.Sprintf("%s:%s", c.DocumentID, strings.TrimSpace(c.Content))
+				if !seenContent[key] {
+					seenContent[key] = true
+					rankedChunks = append(rankedChunks, c)
+				}
+			}
+		}
+
+		var contextBuilder strings.Builder
+		for i, c := range rankedChunks {
+			if contextBuilder.Len() > 8000 {
+				break
+			}
+			fmt.Fprintf(&contextBuilder, "--- Excerpt %d ---\n%s\n\n", i+1, c.Content)
+		}
+		context_ = contextBuilder.String()
+		if context_ == "" {
+			context_ = "No relevant material was found for this question."
+		}
 	}
 
 	// ── Step 9: Stream Response Generation ───────────────────────────────
 	var bestContent string
-	var bestScore int
 	confidence := "normal"
 
 	for attempt := 1; attempt <= s.maxRetries; attempt++ {
 		prompt := provider.Prompt{
-			System: "You are a helpful study assistant. Answer questions based ONLY on the provided material. Cite your sources.",
+			System: "You are an expert technical assistant. Answer the user's question clearly and thoroughly using the provided context as primary source material. Combine the context details into a cohesive, professional answer.",
 			Messages: []provider.PromptMessage{
 				{Role: "user", Content: fmt.Sprintf("Context:\n%s\n\nQuestion: %s", context_, userContent)},
 			},
@@ -296,21 +319,13 @@ func (s *Service) Send(
 			}
 		}
 
-		score := 8
-
-		if score > bestScore {
-			bestScore = score
-			bestContent = fullContent
-		}
-
-		if score >= 7 {
-			break
-		}
+		bestContent = fullContent
+		break
 	}
 
 	tokenCh <- StreamToken{Done: true}
 
-	// ── Step 10: Persist Assistant Message + Citations ───────────────────
+	// ── Step 10: Persist Assistant Message, Citations & Log Metrics ───────
 	msgStatus := entities.MessageStatusCompleted
 	if confidence == "low_confidence" {
 		msgStatus = entities.MessageStatusLowConfidence
@@ -348,6 +363,22 @@ func (s *Service) Send(
 	if len(cits) > 0 {
 		_ = s.citations.CreateBatch(ctx, cits)
 	}
+
+	// Log clear structured telemetry
+	previewText := strings.ReplaceAll(bestContent, "\n", " ")
+	if len(previewText) > 100 {
+		previewText = previewText[:100] + "..."
+	}
+
+	log.Printf("\n"+
+		"=================== [CHAT TELEMETRY METRICS] ===================\n"+
+		"| FastRoute      : %t\n"+
+		"| Vector Search  : %t (Citations: %d)\n"+
+		"| Latency        : %v\n"+
+		"| Output Preview : \"%s\"\n"+
+		"================================================================\n",
+		isFastRoute, usedVector, len(citResults), time.Since(startTime), previewText)
+
 
 	return &MessageResult{
 		MessageID:  assistantMsg.ID,

@@ -42,6 +42,7 @@ export interface DocumentItem {
 	source_url?: string;
 	status: DocumentStatus;
 	created_at: string;
+	summary?: string;
 }
 export interface UploadResult { conversation_id: string; document_ids: string[] }
 

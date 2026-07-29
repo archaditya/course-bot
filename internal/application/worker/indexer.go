@@ -112,10 +112,24 @@ func (w *IndexerWorker) process(ctx context.Context, conversationID, chunksJSON,
 		return fmt.Errorf("indexer: unmarshal: %w", err)
 	}
 
-	// Step 1: Add metadata (local, no AI call)
+	// Step 1: Add metadata & AI Generated NotebookLM Source Guide
 	metadataStart := time.Now()
 	for i := range chunks {
 		chunks[i].Title, chunks[i].Summary = localMetadata(chunks[i].Content)
+	}
+
+	// Generate AI Source Guide for the main document
+	if len(chunks) > 0 {
+		var combinedContent strings.Builder
+		for i, c := range chunks {
+			if i >= 5 {
+				break
+			}
+			combinedContent.WriteString(c.Content + "\n")
+		}
+		if aiSummary, err := w.aiClient.GenerateSummary(ctx, combinedContent.String(), "1.0"); err == nil && aiSummary != "" {
+			chunks[0].Summary = aiSummary
+		}
 	}
 	observability.RecordProcessingTime("metadata", time.Since(metadataStart))
 

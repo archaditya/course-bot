@@ -5,20 +5,22 @@ from app.providers.base import Prompt, Response
 class SummaryGeneratorService:
     def __init__(self, provider: LLMProvider):
         self.provider = provider
-    
+
     async def generate_summary(self, content: str, prompt_version: str = "1.0") -> str:
-        """Generate a 1-2 sentence summary of content."""
+        """Generate a real NotebookLM-style Source Guide summary."""
         prompt = Prompt(
-            text=f"""Generate a 1-2 sentence summary of this content:
+            text=f"""Analyze this source content and generate a comprehensive NotebookLM Source Guide summary.
+Describe the core focus, key technical concepts, tools covered, and practical takeaways.
 
-{content[:3000]}
+Content Excerpt:
+{content[:6000]}
 
-Return only the summary, no explanation.""",
-            system_prompt="You are a helpful assistant that writes clear, concise summaries.",
-            temperature=0.5,
-            max_tokens=100,
+Return a clean, professional 2-paragraph Source Guide.""",
+            system_prompt="You are an expert technical assistant that writes comprehensive NotebookLM Source Guides.",
+            temperature=0.3,
+            max_tokens=300,
             prompt_version=prompt_version,
         )
-        
+
         response = await self.provider.generate(prompt)
         return response.text.strip()

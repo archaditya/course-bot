@@ -122,7 +122,7 @@ func main() {
 	deps := httpapi.Dependencies{
 		JWTSigningKey: cfg.Auth.JWTSigningKey,
 		AuthHandler:   httpapi.NewAuthHandler(authService),
-		UploadHandler: httpapi.NewUploadHandler(uploadService, documents),
+		UploadHandler: httpapi.NewUploadHandler(uploadService, documents, chunks),
 		ChatHandler:   httpapi.NewChatHandler(chatService),
 		StatusHandler: statusHandler,
 

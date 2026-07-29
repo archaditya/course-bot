@@ -135,3 +135,28 @@ class URLSection(BaseModel):
 class URLExtractionResponse(BaseModel):
     title: str
     sections: List[URLSection]
+
+class IntentClassifyRequest(BaseModel):
+    query: str
+    has_documents: bool = False
+
+class IntentClassifyResponse(BaseModel):
+    intent: str
+    confidence: float
+    reasoning: str
+    used_llm: bool
+
+class MemorySearchRequest(BaseModel):
+    workspace_id: str
+    query: str
+
+class MemorySearchResponse(BaseModel):
+    memories: List[str]
+
+class MemoryAddRequest(BaseModel):
+    workspace_id: str
+    user_text: str
+    assistant_text: str
+
+class MemoryAddResponse(BaseModel):
+    added_facts: List[str]

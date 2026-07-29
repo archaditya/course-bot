@@ -56,9 +56,8 @@ class OpenAIEmbedding(EmbeddingProvider):
         self.client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
     
     async def embed(self, texts: List[str]) -> List[Vector]:
-        # Truncate each text to max 24,000 characters (~6,000 tokens) to stay safely within OpenAI's 8,192 token limit
-        safe_texts = [t[:24000] for t in texts]
-        
+        # Truncate each chunk to max 3,000 characters (~2,500 tokens) to guarantee stays 100% under OpenAI's 8,192 limit across all languages (Hindi, English, Code)
+        safe_texts = [t[:3000] for t in texts]
         response = await self.client.embeddings.create(
             model=settings.openai_embedding_model,
             input=safe_texts,

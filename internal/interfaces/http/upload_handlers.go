@@ -21,10 +21,11 @@ import (
 type UploadHandler struct {
 	svc       *upload.Service
 	documents repository.DocumentRepository
+	chunks    repository.ChunkRepository
 }
 
-func NewUploadHandler(svc *upload.Service, documents repository.DocumentRepository) *UploadHandler {
-	return &UploadHandler{svc: svc, documents: documents}
+func NewUploadHandler(svc *upload.Service, documents repository.DocumentRepository, chunks repository.ChunkRepository) *UploadHandler {
+	return &UploadHandler{svc: svc, documents: documents, chunks: chunks}
 }
 
 func (h *UploadHandler) Register(mux *http.ServeMux) {
@@ -177,6 +178,17 @@ func (h *UploadHandler) listDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]map[string]any, len(docs))
 	for i, d := range docs {
+		var summary string
+		if h.chunks != nil {
+			docChunks, err := h.chunks.ListByDocument(r.Context(), d.ID)
+			if err == nil && len(docChunks) > 0 {
+				summary = docChunks[0].Summary
+				if summary == "" {
+					summary = docChunks[0].Content
+				}
+			}
+		}
+
 		items[i] = map[string]any{
 			"id":                d.ID,
 			"original_filename": d.OriginalFilename,
@@ -184,6 +196,7 @@ func (h *UploadHandler) listDocuments(w http.ResponseWriter, r *http.Request) {
 			"source_url":        d.SourceURL,
 			"status":            d.Status,
 			"created_at":        d.CreatedAt,
+			"summary":           summary,
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})

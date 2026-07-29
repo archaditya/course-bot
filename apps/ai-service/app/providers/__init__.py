@@ -17,28 +17,25 @@ from app.providers.openai.client import (
     OpenAIReranker,
     OpenAIGuardrail,
 )
+from app.providers.groq.client import GroqLLM, GroqGuardrail
 from config.settings import settings
 
 
 def get_llm_provider() -> LLMProvider:
-    if settings.llm_provider == "openai":
-        return OpenAILLM()
-    raise ValueError(f"Unknown LLM provider: {settings.llm_provider}")
+    if settings.groq_api_key:
+        return GroqLLM()
+    return OpenAILLM()
 
 
 def get_embedding_provider() -> EmbeddingProvider:
-    if settings.embedding_provider == "openai":
-        return OpenAIEmbedding()
-    raise ValueError(f"Unknown embedding provider: {settings.embedding_provider}")
+    return OpenAIEmbedding()  # Always OpenAI for Qdrant 1536-dim vectors
 
 
 def get_reranker_provider() -> RerankerProvider:
-    if settings.reranker_provider == "openai":
-        return OpenAIReranker()
-    raise ValueError(f"Unknown reranker provider: {settings.reranker_provider}")
+    return OpenAIReranker()
 
 
 def get_guardrail_provider() -> GuardrailProvider:
-    if settings.guardrail_provider == "openai":
-        return OpenAIGuardrail()
-    raise ValueError(f"Unknown guardrail provider: {settings.guardrail_provider}")
+    if settings.groq_api_key:
+        return GroqGuardrail()
+    return OpenAIGuardrail()

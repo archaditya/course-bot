@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-small"
     openai_llm_large_model: str = "gpt-4o"
     openai_llm_mini_model: str = "gpt-4o-mini"
+
+    # Groq API
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    groq_llm_large_model: str = "llama-3.1-8b-instant"
+    groq_llm_fast_model: str = "llama-3.1-8b-instant"
     
     # Qdrant
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
