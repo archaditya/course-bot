@@ -1,7 +1,7 @@
 // Package qdrant implements provider.VectorStore against the Qdrant REST API.
-// See docs/07-storage.md. Only Go Workers ever call Upsert; the AI Service
-// calls Qdrant directly for hybrid search at query time — so this package
-// only needs Upsert, Search, and DeleteByCourse.
+// Only Go Workers ever call Upsert; the Go API's chat service calls Search
+// directly at query time — so this package only needs Upsert, Search, and
+// the two Delete variants.
 package qdrant
 
 import (
@@ -42,9 +42,9 @@ func NewStore(qdrantURL, apiKey string) (*Store, error) {
 	return s, nil
 }
 
-// Upsert writes vectors and their minimal payload (chunk_id, course_id,
-// start_timestamp) to Qdrant. Called by Embedding Worker only.
-// Qdrant is treated as a rebuildable derived index — see ADR-002.
+// Upsert writes vectors and their minimal payload (chunk_id, conversation_id,
+// document_id, start_timestamp) to Qdrant. Called by Embedding Worker only.
+// Qdrant is treated as a rebuildable derived index.
 func (s *Store) Upsert(ctx context.Context, points []provider.VectorPoint) error {
 	type qdrantPoint struct {
 		ID      string                 `json:"id"`
@@ -54,8 +54,9 @@ func (s *Store) Upsert(ctx context.Context, points []provider.VectorPoint) error
 	pts := make([]qdrantPoint, len(points))
 	for i, p := range points {
 		payload := map[string]interface{}{
-			"chunk_id":  p.ChunkID,
-			"course_id": p.CourseID,
+			"chunk_id":        p.ChunkID,
+			"conversation_id": p.ConversationID,
+			"document_id":     p.DocumentID,
 		}
 		if p.StartTimestamp != nil {
 			payload["start_timestamp"] = *p.StartTimestamp
@@ -70,22 +71,23 @@ func (s *Store) Upsert(ctx context.Context, points []provider.VectorPoint) error
 	return s.put(ctx, "/collections/"+s.collection+"/points?wait=true", body)
 }
 
-// Search performs a vector nearest-neighbour search.
-// If courseID is provided, search is filtered by course_id.
-// Otherwise, search is performed across all vectors.
-func (s *Store) Search(ctx context.Context, courseID string, query provider.Vector, topK int) ([]provider.VectorSearchResult, error) {
+// Search performs a vector nearest-neighbour search scoped to exactly one
+// conversation's documents. conversationID is required — there is no
+// unfiltered search path, on purpose: a conversation must never be able to
+// surface another conversation's citations.
+func (s *Store) Search(ctx context.Context, conversationID string, query provider.Vector, topK int) ([]provider.VectorSearchResult, error) {
+	if conversationID == "" {
+		return nil, fmt.Errorf("qdrant: search: conversationID is required")
+	}
 	reqBody := map[string]any{
 		"vector":       []float32(query),
 		"limit":        topK,
 		"with_payload": false,
-	}
-
-	if courseID != "" {
-		reqBody["filter"] = map[string]any{
+		"filter": map[string]any{
 			"must": []map[string]any{
-				{"key": "course_id", "match": map[string]any{"value": courseID}},
+				{"key": "conversation_id", "match": map[string]any{"value": conversationID}},
 			},
-		}
+		},
 	}
 
 	body, _ := json.Marshal(reqBody)
@@ -105,13 +107,27 @@ func (s *Store) Search(ctx context.Context, courseID string, query provider.Vect
 	return results, nil
 }
 
-// DeleteByCourse removes all vectors whose course_id payload matches. Called
-// when a course is deleted or re-indexed.
-func (s *Store) DeleteByCourse(ctx context.Context, courseID string) error {
+// DeleteByDocument removes all vectors whose document_id payload matches.
+// Called when a single source is removed from a conversation.
+func (s *Store) DeleteByDocument(ctx context.Context, documentID string) error {
 	body, _ := json.Marshal(map[string]any{
 		"filter": map[string]any{
 			"must": []map[string]any{
-				{"key": "course_id", "match": map[string]any{"value": courseID}},
+				{"key": "document_id", "match": map[string]any{"value": documentID}},
+			},
+		},
+	})
+	return s.postNoResp(ctx, "/collections/"+s.collection+"/points/delete?wait=true", body)
+}
+
+// DeleteByConversation removes all vectors whose conversation_id payload
+// matches. Called when a whole conversation (and its knowledge base) is
+// deleted.
+func (s *Store) DeleteByConversation(ctx context.Context, conversationID string) error {
+	body, _ := json.Marshal(map[string]any{
+		"filter": map[string]any{
+			"must": []map[string]any{
+				{"key": "conversation_id", "match": map[string]any{"value": conversationID}},
 			},
 		},
 	})
@@ -120,10 +136,8 @@ func (s *Store) DeleteByCourse(ctx context.Context, courseID string) error {
 
 // ensureCollection creates the collection if it doesn't exist. Uses cosine
 // distance and 1536 dimensions (text-embedding-3-small). If the embedding
-// model changes, the collection must be rebuilt — see
-// docs/04-indexing-pipeline.md#versioning-strategy.
+// model changes, the collection must be rebuilt.
 func (s *Store) ensureCollection(ctx context.Context) error {
-	// Check existence
 	resp, err := s.doRequest(ctx, http.MethodGet, "/collections/"+s.collection, nil)
 	if err != nil {
 		return err
@@ -133,7 +147,6 @@ func (s *Store) ensureCollection(ctx context.Context) error {
 		return nil // already exists
 	}
 
-	// Create
 	body, _ := json.Marshal(map[string]any{
 		"vectors": map[string]any{
 			"size":     1536,

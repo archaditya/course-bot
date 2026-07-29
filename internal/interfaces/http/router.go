@@ -49,13 +49,11 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 // Constructed once in cmd/api/main.go and passed in here so router.go stays
 // the single place that knows how the HTTP surface maps to handlers.
 type Dependencies struct {
-	JWTSigningKey  string
-	AuthHandler    *AuthHandler
-	ProjectHandler *ProjectHandler
-	CourseHandler  *CourseHandler
-	UploadHandler  *UploadHandler
-	ChatHandler    *ChatHandler
-	StatusHandler  *StatusHandler
+	JWTSigningKey string
+	AuthHandler   *AuthHandler
+	UploadHandler *UploadHandler
+	ChatHandler   *ChatHandler
+	StatusHandler *StatusHandler
 
 	RedisClient  pinger // *redis.Queue (infrastructure/redis)
 	PostgresDB   *sql.DB
@@ -106,8 +104,6 @@ func NewRouter(deps Dependencies) http.Handler {
 	deps.AuthHandler.Register(public)
 
 	protected := http.NewServeMux()
-	deps.ProjectHandler.Register(protected)
-	deps.CourseHandler.Register(protected)
 	deps.UploadHandler.Register(protected)
 	deps.ChatHandler.Register(protected)
 	deps.StatusHandler.Register(protected)
@@ -121,12 +117,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	rateLimited := RateLimitMiddleware(rateLimiter)
 
 	top.Handle("/auth/me", auth(protected))
-	top.Handle("/projects", auth(rateLimited(protected)))       // ADD rateLimited
-	top.Handle("/projects/", auth(rateLimited(protected)))      // ADD rateLimited
-	top.Handle("/courses/", auth(rateLimited(protected)))       // ADD rateLimited
-	top.Handle("/collections/", auth(rateLimited(protected)))   // ADD rateLimited
 	top.Handle("/conversations", auth(rateLimited(protected)))  // ADD rateLimited
 	top.Handle("/conversations/", auth(rateLimited(protected))) // ADD rateLimited
+	top.Handle("/documents/", auth(rateLimited(protected)))     // ADD rateLimited
 	top.Handle("/chunks/", auth(rateLimited(protected)))        // ADD rateLimited
 
 	return Recovery(SecurityHeaders(CORS(Logging(top))))

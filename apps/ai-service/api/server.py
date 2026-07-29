@@ -33,6 +33,15 @@ from app.pdf_extractor.service import PDFExtractorService
 from app.url_extractor.service import URLExtractorService
 from api.schemas import URLExtractionRequest, URLExtractionResponse, URLSection as URLSectionSchema
 
+from app.intent_classifier.service import IntentClassifierService
+from app.memory.service import WorkspaceMemoryService
+from api.schemas import (
+    IntentClassifyRequest, IntentClassifyResponse,
+    MemorySearchRequest, MemorySearchResponse,
+    MemoryAddRequest, MemoryAddResponse,
+)
+
+
 app = FastAPI(title="archadiLM AI Service", version="0.2.0")
 
 # Initialize services
@@ -52,6 +61,9 @@ query_enhancer = QueryEnhancerService(llm_provider)
 hyde_service = HydeService(llm_provider)
 pdf_extractor = PDFExtractorService()
 url_extractor = URLExtractorService()
+
+intent_classifier = IntentClassifierService(llm_provider)
+memory_service = WorkspaceMemoryService()
 
 qdrant = QdrantClient()
 bm25 = BM25Retriever()
@@ -259,5 +271,37 @@ async def extract_url(request: URLExtractionRequest):
                 for s in result.sections
             ],
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/classify-intent", response_model=IntentClassifyResponse)
+async def classify_intent(request: IntentClassifyRequest):
+    """Classify query intent with rule engine + LLM fallback."""
+    try:
+        res = await intent_classifier.classify(request.query, request.has_documents)
+        return IntentClassifyResponse(
+            intent=res.intent.value,
+            confidence=res.confidence,
+            reasoning=res.reasoning,
+            used_llm=res.used_llm,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/memory/search", response_model=MemorySearchResponse)
+async def search_memory(request: MemorySearchRequest):
+    """Search workspace long-term memory."""
+    try:
+        memories = await memory_service.search_memory(request.workspace_id, request.query)
+        return MemorySearchResponse(memories=memories)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/memory/add", response_model=MemoryAddResponse)
+async def add_memory(request: MemoryAddRequest):
+    """Add extracted personal facts to workspace long-term memory."""
+    try:
+        facts = await memory_service.add_memory(request.workspace_id, request.user_text, request.assistant_text)
+        return MemoryAddResponse(added_facts=facts)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

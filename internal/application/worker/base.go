@@ -1,9 +1,8 @@
 // Package worker contains the Go background workers that own the entire
 // indexing pipeline. Each worker consumes one Redis Stream event, does its
-// work, and publishes the next event. See docs/04-indexing-pipeline.md.
-//
-// Workers never serve HTTP requests. All persistence (Postgres, Qdrant) is
-// done here — the Python AI Service only returns compute results.
+// work, and publishes the next event. Workers never serve HTTP requests.
+// All persistence (Postgres, Qdrant) is done here — the Python AI Service
+// only returns compute results.
 package worker
 
 import (
@@ -23,9 +22,7 @@ import (
 const PipelineVersion = "1.0"
 
 // dbRetryConfig governs the short, fast retries used for Postgres/state
-// writes within a single pipeline step. It is intentionally small — the
-// job-level retry loop (see indexer.go/parser.go/text_processor.go) is what
-// handles slow, expensive retries like a failed AI-service call.
+// writes within a single pipeline step.
 var dbRetryConfig = resilience.RetryConfig{
 	MaxAttempts:  3,
 	InitialDelay: 100 * time.Millisecond,
@@ -35,11 +32,11 @@ var dbRetryConfig = resilience.RetryConfig{
 
 // base holds the dependencies shared by all pipeline stages.
 type base struct {
-	courses  repository.CourseRepository
-	jobs     repository.JobRepository
-	jobStore *redisinfra.JobStore
-	queue    provider.Queue
-	ids      provider.IDGenerator
+	documents repository.DocumentRepository
+	jobs      repository.JobRepository
+	jobStore  *redisinfra.JobStore
+	queue     provider.Queue
+	ids       provider.IDGenerator
 }
 
 // SetJobStore attaches the Redis-backed job status cache used for fast
@@ -57,8 +54,6 @@ func (b *base) startJob(ctx context.Context, job *entities.Job) error {
 	}
 	job.Attempts++
 
-	// Update Redis first (fast path for status reads). Best-effort: Redis
-	// being unavailable must never block the pipeline.
 	if b.jobStore != nil {
 		_ = b.jobStore.UpdateJobStatus(ctx, job.ID, entities.JobStatusRunning)
 	}
@@ -68,13 +63,9 @@ func (b *base) startJob(ctx context.Context, job *entities.Job) error {
 	})
 }
 
-// succeedJob marks a Job SUCCEEDED and advances the Course state to `next`.
-//
-// ws is always "" for pipeline workers (they're trusted internal callers,
-// not scoped to a browser's workspace claim) — CourseRepository.UpdateStatus
-// already has an internal, unscoped update path for that case, so there is
-// no separate "by id" method to call here.
-func (b *base) succeedJob(ctx context.Context, ws repository.WorkspaceID, job *entities.Job, nextStatus entities.CourseStatus) error {
+// succeedJob marks a Job SUCCEEDED and advances the Document's own status to
+// `next`. Every source tracks its own indexing progress independently.
+func (b *base) succeedJob(ctx context.Context, job *entities.Job, nextStatus entities.DocumentStatus) error {
 	if err := job.TransitionTo(entities.JobStatusSucceeded); err != nil {
 		return fmt.Errorf("succeed job: %w", err)
 	}
@@ -90,18 +81,18 @@ func (b *base) succeedJob(ctx context.Context, ws repository.WorkspaceID, job *e
 	}
 
 	return resilience.RetryWithContext(ctx, dbRetryConfig, func() error {
-		return b.courses.UpdateStatus(ctx, ws, job.CourseID, nextStatus)
+		return b.documents.UpdateStatus(ctx, job.DocumentID, nextStatus)
 	})
 }
 
-// failJob handles retryable vs. non-retryable failures per
-// docs/09-deployment.md#error-handling. On max retries it dead-letters the
-// job, marks the course FAILED, publishes a FAILED event, and sends the
-// original event to the DLQ stream so it can be inspected/replayed later.
-func (b *base) failJob(ctx context.Context, ws repository.WorkspaceID, job *entities.Job, stage, courseID, traceID string, originalErr error) {
+// failJob handles retryable vs. non-retryable failures. On max retries it
+// dead-letters the job, marks the document FAILED, publishes a FAILED
+// event, and sends the original event to the DLQ stream so it can be
+// inspected/replayed later.
+func (b *base) failJob(ctx context.Context, job *entities.Job, stage, conversationID, traceID string, originalErr error) {
 	errMsg := originalErr.Error()
-	log.Printf("worker: %s failed (attempt %d/%d) course=%s: %v",
-		stage, job.Attempts, job.MaxAttempts, courseID, originalErr)
+	log.Printf("worker: %s failed (attempt %d/%d) document=%s: %v",
+		stage, job.Attempts, job.MaxAttempts, job.DocumentID, originalErr)
 
 	if job.Attempts >= job.MaxAttempts {
 		_ = job.TransitionTo(entities.JobStatusDeadLettered)
@@ -110,7 +101,7 @@ func (b *base) failJob(ctx context.Context, ws repository.WorkspaceID, job *enti
 			return b.jobs.Update(ctx, job)
 		})
 		_ = resilience.RetryWithContext(ctx, dbRetryConfig, func() error {
-			return b.courses.UpdateStatus(ctx, ws, courseID, entities.CourseStatusFailed)
+			return b.documents.UpdateStatus(ctx, job.DocumentID, entities.DocumentStatusFailed)
 		})
 
 		if b.jobStore != nil {
@@ -120,20 +111,21 @@ func (b *base) failJob(ctx context.Context, ws repository.WorkspaceID, job *enti
 		_ = b.queue.Publish(ctx, "pipeline:status", provider.Event{
 			Name: "FAILED",
 			Payload: map[string]any{
-				"course_id": courseID,
-				"job_id":    job.ID,
-				"stage":     stage,
-				"error":     errMsg,
+				"conversation_id": conversationID,
+				"document_id":     job.DocumentID,
+				"job_id":          job.ID,
+				"stage":           stage,
+				"error":           errMsg,
 			},
 			TraceID: traceID,
 		})
 
 		event := provider.Event{
 			Name:    "FAILED",
-			Payload: map[string]any{"course_id": courseID, "job_id": job.ID},
+			Payload: map[string]any{"conversation_id": conversationID, "document_id": job.DocumentID, "job_id": job.ID},
 			TraceID: traceID,
 		}
-		_ = SendToDLQ(ctx, b.queue, "pipeline:status", event, stage, job.ID, courseID, originalErr)
+		_ = SendToDLQ(ctx, b.queue, "pipeline:status", event, stage, job.ID, conversationID, originalErr)
 		return
 	}
 

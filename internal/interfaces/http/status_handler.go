@@ -6,23 +6,25 @@ import (
 	"archadilm/internal/domain/repository"
 )
 
+// StatusHandler exposes indexing status for a single Document — every
+// source tracks its own status independently, so there is no separate
+// "collection" status to roll up.
 type StatusHandler struct {
-	courses repository.CourseRepository
-	jobs    repository.JobRepository
+	documents repository.DocumentRepository
+	jobs      repository.JobRepository
 }
 
-func NewStatusHandler(courses repository.CourseRepository, jobs repository.JobRepository) *StatusHandler {
-	return &StatusHandler{courses: courses, jobs: jobs}
+func NewStatusHandler(documents repository.DocumentRepository, jobs repository.JobRepository) *StatusHandler {
+	return &StatusHandler{documents: documents, jobs: jobs}
 }
 func (h *StatusHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /courses/{courseID}/status", h.handleGetStatus)
-	mux.HandleFunc("GET /collections/{courseID}/status", h.handleGetStatus)
+	mux.HandleFunc("GET /documents/{documentID}/status", h.handleGetStatus)
 }
 
-type courseStatusResponse struct {
-	CourseID string          `json:"course_id"`
-	Status   string          `json:"status"`
-	Jobs     []jobStatusItem `json:"jobs"`
+type documentStatusResponse struct {
+	DocumentID string          `json:"document_id"`
+	Status     string          `json:"status"`
+	Jobs       []jobStatusItem `json:"jobs"`
 }
 type jobStatusItem struct {
 	ID        string `json:"id"`
@@ -38,12 +40,12 @@ func (h *StatusHandler) handleGetStatus(w http.ResponseWriter, r *http.Request) 
 		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
 		return
 	}
-	course, err := h.courses.GetByID(r.Context(), claims.WorkspaceID, r.PathValue("courseID"))
+	doc, err := h.documents.GetByID(r.Context(), claims.WorkspaceID, r.PathValue("documentID"))
 	if err != nil {
-		WriteError(w, http.StatusNotFound, "NOT_FOUND", "Collection not found.")
+		WriteError(w, http.StatusNotFound, "NOT_FOUND", "Document not found.")
 		return
 	}
-	jobs, err := h.jobs.ListByCourse(r.Context(), course.ID)
+	jobs, err := h.jobs.ListByDocument(r.Context(), doc.ID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not load indexing status.")
 		return
@@ -52,5 +54,5 @@ func (h *StatusHandler) handleGetStatus(w http.ResponseWriter, r *http.Request) 
 	for i, job := range jobs {
 		items[i] = jobStatusItem{ID: job.ID, Stage: string(job.Stage), Status: string(job.Status), Attempts: job.Attempts, LastError: job.LastError}
 	}
-	writeJSON(w, http.StatusOK, courseStatusResponse{CourseID: course.ID, Status: string(course.Status), Jobs: items})
+	writeJSON(w, http.StatusOK, documentStatusResponse{DocumentID: doc.ID, Status: string(doc.Status), Jobs: items})
 }

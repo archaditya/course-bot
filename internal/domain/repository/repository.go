@@ -1,14 +1,15 @@
 // Package repository defines the persistence-facing interfaces that
 // application/ use cases depend on. Concrete implementations live in
 // internal/infrastructure/postgres (and redis, r2, qdrant for the
-// non-relational stores) and are wired in at startup — see
-// docs/02-system-architecture.md#module-dependency-diagram.
+// non-relational stores) and are wired in at startup.
 //
-// Workspace isolation (docs/08-security.md#workspace-isolation) is enforced
-// here at the type level: every method that reads or writes a
-// workspace-scoped resource takes a WorkspaceID as a required argument.
-// There is deliberately no method shaped like "GetProject(id)" without a
-// workspace context — that shape is how cross-tenant bugs happen.
+// Workspace isolation is enforced here at the type level: every method that
+// reads or writes a workspace-scoped resource takes a WorkspaceID as a
+// required argument. There is deliberately no method shaped like
+// "GetDocument(id)" without a workspace context — that shape is how
+// cross-tenant bugs happen (see the migration note in
+// migrations/000004_flatten_to_workspace_model.up.sql for the bug this
+// replaced).
 package repository
 
 import (
@@ -22,14 +23,13 @@ import (
 // lookup finds no matching (and, for workspace-scoped lookups, no
 // authorized) row. It lives in domain/ rather than in a specific
 // infrastructure package so application/ use cases can check for it without
-// importing any concrete implementation — see
-// docs/02-system-architecture.md#module-dependency-diagram.
+// importing any concrete implementation.
 var ErrNotFound = errors.New("repository: not found")
 
-// WorkspaceID is a required argument, not a type alias for string, so a
-// caller can't accidentally pass a ProjectID or CourseID where a workspace
-// scope is expected without the compiler noticing the intent mismatch is at
-// least named.
+// WorkspaceID is a required argument, not a type alias hidden behind a
+// generic string, so a caller can't accidentally pass some other ID where a
+// workspace scope is expected without the compiler noticing the intent
+// mismatch is at least named.
 type WorkspaceID = string
 
 type UserRepository interface {
@@ -52,6 +52,62 @@ type WorkspaceRepository interface {
 	GetByUserID(ctx context.Context, userID string) (*entities.Workspace, error)
 }
 
+// DocumentRepository owns one uploaded source (PDF, YouTube URL, pasted
+// text, or one file out of a ZIP). Every Document belongs directly to the
+// Conversation whose knowledge base it's part of.
+type DocumentRepository interface {
+	Create(ctx context.Context, ws WorkspaceID, d *entities.Document) error
+	GetByID(ctx context.Context, ws WorkspaceID, id string) (*entities.Document, error)
+	// GetByIDInternal is the unscoped read path for trusted internal callers
+	// (pipeline workers), which don't carry a browser workspace claim —
+	// mirrors the pattern used by UpdateStatus below.
+	GetByIDInternal(ctx context.Context, id string) (*entities.Document, error)
+	ListByConversation(ctx context.Context, ws WorkspaceID, conversationID string) ([]*entities.Document, error)
+	UpdateStatus(ctx context.Context, id string, status entities.DocumentStatus) error
+	SetNormalizedRef(ctx context.Context, id string, ref string, version string) error
+	SetNormalizedData(ctx context.Context, id string, data []byte, version string) error
+	GetNormalizedData(ctx context.Context, id string) ([]byte, string, error)
+	UpdateOriginalFilename(ctx context.Context, id string, filename string) error
+	Delete(ctx context.Context, ws WorkspaceID, id string) error
+}
+
+type ChunkRepository interface {
+	CreateBatch(ctx context.Context, chunks []*entities.Chunk) error
+	ListByDocument(ctx context.Context, documentID string) ([]*entities.Chunk, error)
+	GetByIDs(ctx context.Context, ids []string) ([]*entities.Chunk, error)
+	GetByID(ctx context.Context, id string) (*entities.Chunk, error)
+}
+
+type ConversationRepository interface {
+	Create(ctx context.Context, c *entities.Conversation) error
+	GetByID(ctx context.Context, ws WorkspaceID, id string) (*entities.Conversation, error)
+	ListByWorkspace(ctx context.Context, ws WorkspaceID, cursor string, limit int) ([]*entities.Conversation, string, error)
+	UpdateTitle(ctx context.Context, ws WorkspaceID, id string, title string) error
+	Delete(ctx context.Context, ws WorkspaceID, id string) error
+}
+
+type MessageRepository interface {
+	Create(ctx context.Context, m *entities.Message) error
+	ListByConversation(ctx context.Context, conversationID string, cursor string, limit int) ([]*entities.Message, string, error)
+	UpdateStatus(ctx context.Context, id string, status entities.MessageStatus) error
+}
+
+type CitationRepository interface {
+	CreateBatch(ctx context.Context, citations []*entities.Citation) error
+	ListByMessage(ctx context.Context, messageID string) ([]*entities.Citation, error)
+}
+
+type JobRepository interface {
+	Create(ctx context.Context, j *entities.Job) error
+	GetByID(ctx context.Context, id string) (*entities.Job, error)
+	ListByDocument(ctx context.Context, documentID string) ([]*entities.Job, error)
+	Update(ctx context.Context, j *entities.Job) error
+}
+
+type AuditLogRepository interface {
+	Record(ctx context.Context, a *entities.AuditLog) error
+}
+
 type ProjectRepository interface {
 	Create(ctx context.Context, p *entities.Project) error
 	GetByID(ctx context.Context, ws WorkspaceID, id string) (*entities.Project, error)
@@ -72,51 +128,4 @@ type CourseRepository interface {
 type LessonRepository interface {
 	Create(ctx context.Context, l *entities.Lesson) error
 	ListByCourse(ctx context.Context, courseID string) ([]*entities.Lesson, error)
-}
-
-type DocumentRepository interface {
-	Create(ctx context.Context, d *entities.Document) error
-	GetByID(ctx context.Context, id string) (*entities.Document, error)
-	ListByCourse(ctx context.Context, courseID string) ([]*entities.Document, error)
-	SetNormalizedRef(ctx context.Context, id string, ref string, version string) error
-	SetNormalizedData(ctx context.Context, id string, data []byte, version string) error
-    GetNormalizedData(ctx context.Context, id string) ([]byte, string, error)
-	UpdateOriginalFilename(ctx context.Context, id string, filename string) error
-}
-
-type ChunkRepository interface {
-	CreateBatch(ctx context.Context, chunks []*entities.Chunk) error
-	ListByDocument(ctx context.Context, documentID string) ([]*entities.Chunk, error)
-	GetByIDs(ctx context.Context, ids []string) ([]*entities.Chunk, error)
-	GetByID(ctx context.Context, id string) (*entities.Chunk, error)
-}
-
-type ConversationRepository interface {
-	Create(ctx context.Context, c *entities.Conversation) error
-	GetByID(ctx context.Context, ws WorkspaceID, id string) (*entities.Conversation, error)
-	ListByProject(ctx context.Context, ws WorkspaceID, projectID string, cursor string, limit int) ([]*entities.Conversation, string, error)
-	UpdateTitle(ctx context.Context, id string, title string) error
-	Delete(ctx context.Context, ws WorkspaceID, id string) error
-}
-
-type MessageRepository interface {
-	Create(ctx context.Context, m *entities.Message) error
-	ListByConversation(ctx context.Context, conversationID string, cursor string, limit int) ([]*entities.Message, string, error)
-	UpdateStatus(ctx context.Context, id string, status entities.MessageStatus) error
-}
-
-type CitationRepository interface {
-	CreateBatch(ctx context.Context, citations []*entities.Citation) error
-	ListByMessage(ctx context.Context, messageID string) ([]*entities.Citation, error)
-}
-
-type JobRepository interface {
-	Create(ctx context.Context, j *entities.Job) error
-	GetByID(ctx context.Context, id string) (*entities.Job, error)
-	ListByCourse(ctx context.Context, courseID string) ([]*entities.Job, error)
-	Update(ctx context.Context, j *entities.Job) error
-}
-
-type AuditLogRepository interface {
-	Record(ctx context.Context, a *entities.AuditLog) error
 }

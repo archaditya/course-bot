@@ -28,13 +28,13 @@ func (r *chunkRepository) CreateBatch(ctx context.Context, chunks []*entities.Ch
 
 	const q = `
 		INSERT INTO chunks
-			(id, document_id, course_id, start_timestamp, end_timestamp, page_number,
+			(id, document_id, conversation_id, start_timestamp, end_timestamp, page_number,
 			 title, summary, content, token_count, embedding_version, vector_ref)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
 
 	for _, c := range chunks {
 		_, err := tx.ExecContext(ctx, q,
-			c.ID, c.DocumentID, c.CourseID,
+			c.ID, c.DocumentID, c.ConversationID,
 			nullInt(c.StartTimestamp), nullInt(c.EndTimestamp), nullInt(c.PageNumber),
 			c.Title, c.Summary, c.Content, c.TokenCount,
 			c.EmbeddingVersion, c.VectorRef,
@@ -48,9 +48,12 @@ func (r *chunkRepository) CreateBatch(ctx context.Context, chunks []*entities.Ch
 
 func (r *chunkRepository) ListByDocument(ctx context.Context, documentID string) ([]*entities.Chunk, error) {
 	const q = `
-		SELECT id, document_id, course_id, start_timestamp, end_timestamp, page_number,
-		       title, summary, content, token_count, embedding_version, vector_ref, created_at
-		FROM chunks WHERE document_id = $1 ORDER BY created_at`
+		SELECT c.id, c.document_id, c.conversation_id, c.start_timestamp, c.end_timestamp, c.page_number,
+		       c.title, c.summary, c.content, c.token_count, c.embedding_version, c.vector_ref, c.created_at,
+		       COALESCE(d.original_filename, ''), COALESCE(d.source_type, ''), COALESCE(d.source_url, '')
+		FROM chunks c
+		LEFT JOIN documents d ON c.document_id = d.id
+		WHERE c.document_id = $1 ORDER BY c.created_at`
 	rows, err := r.db.QueryContext(ctx, q, documentID)
 	if err != nil {
 		return nil, fmt.Errorf("chunk: list: %w", err)
@@ -70,7 +73,7 @@ func (r *chunkRepository) GetByIDs(ctx context.Context, ids []string) ([]*entiti
 		args[i] = id
 	}
 	q := fmt.Sprintf(`
-		SELECT c.id, c.document_id, c.course_id, c.start_timestamp, c.end_timestamp, c.page_number,
+		SELECT c.id, c.document_id, c.conversation_id, c.start_timestamp, c.end_timestamp, c.page_number,
 		       c.title, c.summary, c.content, c.token_count, c.embedding_version, c.vector_ref, c.created_at,
 		       COALESCE(d.original_filename, ''), COALESCE(d.source_type, ''), COALESCE(d.source_url, '')
 		FROM chunks c
@@ -91,7 +94,7 @@ func scanChunks(rows *sql.Rows) ([]*entities.Chunk, error) {
 		var startTS, endTS, pageNum sql.NullInt64
 		var docName, sourceType, sourceURL string
 		err := rows.Scan(
-			&c.ID, &c.DocumentID, &c.CourseID,
+			&c.ID, &c.DocumentID, &c.ConversationID,
 			&startTS, &endTS, &pageNum,
 			&c.Title, &c.Summary, &c.Content, &c.TokenCount,
 			&c.EmbeddingVersion, &c.VectorRef, &c.CreatedAt,

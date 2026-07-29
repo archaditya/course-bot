@@ -7,30 +7,37 @@ import (
 	"strings"
 
 	"archadilm/internal/application/upload"
+	"archadilm/internal/domain/repository"
 	"archadilm/internal/infrastructure/observability"
 	sentry "github.com/getsentry/sentry-go"
 )
 
-// UploadHandler handles POST /courses/:id/upload per
-// docs/10-api-contracts.md#upload. Returns 202 immediately; processing is
-// async via Redis Streams → Worker pipeline.
+// UploadHandler handles adding sources (PDF/SRT/VTT/DOCX/TXT file, ZIP,
+// YouTube/web URL, or pasted text) to a conversation's own knowledge base,
+// and listing/removing them. Upload returns 202 immediately; processing is
+// async via Redis Streams -> Worker pipeline, and each source's own status
+// is polled from GET /documents/{id}/status (see status_handler.go) or from
+// the list endpoint below.
 type UploadHandler struct {
-	svc *upload.Service
+	svc       *upload.Service
+	documents repository.DocumentRepository
+	chunks    repository.ChunkRepository
 }
 
-func NewUploadHandler(svc *upload.Service) *UploadHandler {
-	return &UploadHandler{svc: svc}
+func NewUploadHandler(svc *upload.Service, documents repository.DocumentRepository, chunks repository.ChunkRepository) *UploadHandler {
+	return &UploadHandler{svc: svc, documents: documents, chunks: chunks}
 }
 
 func (h *UploadHandler) Register(mux *http.ServeMux) {
-	// Collection is the public resource name. Course endpoints remain aliases
-	// while existing clients migrate.
-	mux.HandleFunc("POST /collections/{id}/upload", h.upload)
-	mux.HandleFunc("POST /collections/{courseID}/sources", h.handleAddSource)
-	mux.HandleFunc("POST /courses/{id}/upload", h.upload)
-	mux.HandleFunc("POST /courses/{courseID}/sources", h.handleAddSource)
+	mux.HandleFunc("POST /conversations/{id}/documents", h.upload)
+	mux.HandleFunc("POST /conversations/{id}/documents/source", h.handleAddSource)
+	mux.HandleFunc("GET /conversations/{id}/documents", h.listDocuments)
+	mux.HandleFunc("DELETE /conversations/{id}/documents/{docID}", h.deleteDocument)
 }
 
+// upload accepts a multipart file upload — a single PDF/SRT/VTT/DOCX/TXT
+// file, or a ZIP archive (auto-detected and fanned out into one Document
+// per supported file inside it).
 func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
@@ -63,45 +70,33 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// trace_id threads through all downstream events for distributed tracing
+	conversationID := r.PathValue("id")
+
 	traceID := r.Header.Get("X-Trace-Id")
 	if traceID == "" {
-		traceID = r.PathValue("id") + "-" + header.Filename
+		traceID = conversationID + "-" + header.Filename
 	}
 
 	// Auto-detect ZIP uploads and route to the ZIP handler
 	if strings.HasSuffix(strings.ToLower(header.Filename), ".zip") {
-		result, err := h.svc.UploadZip(r.Context(),
-			claims.WorkspaceID,
-			r.FormValue("project_id"),
-			r.PathValue("id"),
-			data,
-			traceID,
-		)
+		result, err := h.svc.UploadZip(r.Context(), claims.WorkspaceID, conversationID, data, traceID)
 		if err != nil {
 			observability.CaptureException(err)
-			notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
+			notFoundOrInternal(w, err, "CONVERSATION_NOT_FOUND", "Conversation not found.")
 			return
 		}
 		writeJSON(w, http.StatusAccepted, result)
 		return
 	}
 
-	result, err := h.svc.Upload(r.Context(),
-		claims.WorkspaceID,
-		r.FormValue("project_id"),
-		r.PathValue("id"),
-		header.Filename,
-		data,
-		traceID,
-	)
+	result, err := h.svc.Upload(r.Context(), claims.WorkspaceID, conversationID, header.Filename, data, traceID)
 	if err != nil {
 		observability.CaptureException(err)
 		if strings.Contains(err.Error(), "unsupported file type") {
 			WriteError(w, http.StatusBadRequest, "UNSUPPORTED_FILE_TYPE",
 				"Supported: .pdf, .docx, .txt, .md, .srt, .vtt, or .zip")
 		} else {
-			notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
+			notFoundOrInternal(w, err, "CONVERSATION_NOT_FOUND", "Conversation not found.")
 		}
 		return
 	}
@@ -109,8 +104,9 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, result)
 }
 
-// handleAddSource handles URL-based and text-based source additions.
-// For file uploads, the existing upload endpoint is used instead.
+// handleAddSource handles the other two tabs of the "Add Document" modal:
+// a YouTube/web URL, or pasted text. File uploads (including ZIP) go
+// through upload() above instead.
 func (h *UploadHandler) handleAddSource(w http.ResponseWriter, r *http.Request) {
 	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
@@ -123,7 +119,7 @@ func (h *UploadHandler) handleAddSource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	courseID := r.PathValue("courseID")
+	conversationID := r.PathValue("id")
 
 	var req struct {
 		SourceType string `json:"source_type"` // "url" | "text" | "video_url"
@@ -157,12 +153,64 @@ func (h *UploadHandler) handleAddSource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.svc.AddSource(r.Context(), claims.WorkspaceID, courseID, req.SourceType, req.URL, req.Content, req.Title)
+	result, err := h.svc.AddSource(r.Context(), claims.WorkspaceID, conversationID, req.SourceType, req.URL, req.Content, req.Title)
 	if err != nil {
 		observability.CaptureException(err)
-		notFoundOrInternal(w, err, "COURSE_NOT_FOUND", "Course not found.")
+		notFoundOrInternal(w, err, "CONVERSATION_NOT_FOUND", "Conversation not found.")
 		return
 	}
 
 	writeJSON(w, http.StatusAccepted, result)
+}
+
+// listDocuments powers the right-hand sidebar: every source that has been
+// added to this conversation, each with its own indexing status.
+func (h *UploadHandler) listDocuments(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+	docs, err := h.documents.ListByConversation(r.Context(), claims.WorkspaceID, r.PathValue("id"))
+	if err != nil {
+		notFoundOrInternal(w, err, "CONVERSATION_NOT_FOUND", "Conversation not found.")
+		return
+	}
+	items := make([]map[string]any, len(docs))
+	for i, d := range docs {
+		var summary string
+		if h.chunks != nil {
+			docChunks, err := h.chunks.ListByDocument(r.Context(), d.ID)
+			if err == nil && len(docChunks) > 0 {
+				summary = docChunks[0].Summary
+				if summary == "" {
+					summary = docChunks[0].Content
+				}
+			}
+		}
+
+		items[i] = map[string]any{
+			"id":                d.ID,
+			"original_filename": d.OriginalFilename,
+			"source_type":       d.SourceType,
+			"source_url":        d.SourceURL,
+			"status":            d.Status,
+			"created_at":        d.CreatedAt,
+			"summary":           summary,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *UploadHandler) deleteDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
+		return
+	}
+	if err := h.documents.Delete(r.Context(), claims.WorkspaceID, r.PathValue("docID")); err != nil {
+		notFoundOrInternal(w, err, "DOCUMENT_NOT_FOUND", "Document not found.")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

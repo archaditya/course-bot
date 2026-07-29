@@ -25,7 +25,6 @@ type TextProcessorWorker struct {
 }
 
 func NewTextProcessorWorker(
-	courses repository.CourseRepository,
 	jobs repository.JobRepository,
 	documents repository.DocumentRepository,
 	objects provider.ObjectStore,
@@ -35,7 +34,7 @@ func NewTextProcessorWorker(
 	allowedURLDomains []string,
 ) *TextProcessorWorker {
 	return &TextProcessorWorker{
-		base:              base{courses: courses, jobs: jobs, queue: queue, ids: ids},
+		base:              base{documents: documents, jobs: jobs, queue: queue, ids: ids},
 		documents:         documents,
 		objects:           objects,
 		aiClient:          aiClient,
@@ -73,7 +72,7 @@ func (w *TextProcessorWorker) Run(ctx context.Context) error {
 }
 
 func (w *TextProcessorWorker) handle(ctx context.Context, qe provider.QueuedEvent) {
-	courseID, _ := qe.Payload["course_id"].(string)
+	conversationID, _ := qe.Payload["conversation_id"].(string)
 	docID, _ := qe.Payload["document_id"].(string)
 	jobID, _ := qe.Payload["job_id"].(string)
 
@@ -88,14 +87,14 @@ func (w *TextProcessorWorker) handle(ctx context.Context, qe provider.QueuedEven
 			log.Printf("text-processor: start job: %v", err)
 			return
 		}
-		if err := w.process(ctx, courseID, docID, qe.TraceID); err == nil {
-			if err := w.succeedJob(ctx, "", job, entities.CourseStatusIndexing); err != nil {
+		if err := w.process(ctx, conversationID, docID, qe.TraceID); err == nil {
+			if err := w.succeedJob(ctx, job, entities.DocumentStatusEmbedding); err != nil {
 				log.Printf("text-processor: complete job %s: %v", job.ID, err)
 				return
 			}
 			return
 		} else {
-			w.failJob(ctx, "", job, "text-processing", courseID, qe.TraceID, err)
+			w.failJob(ctx, job, "text-processing", conversationID, qe.TraceID, err)
 			if job.Status == entities.JobStatusDeadLettered {
 				return
 			}
@@ -103,8 +102,8 @@ func (w *TextProcessorWorker) handle(ctx context.Context, qe provider.QueuedEven
 	}
 }
 
-func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, traceID string) error {
-	doc, err := w.documents.GetByID(ctx, docID)
+func (w *TextProcessorWorker) process(ctx context.Context, conversationID, docID, traceID string) error {
+	doc, err := w.documents.GetByIDInternal(ctx, docID)
 	if err != nil {
 		return fmt.Errorf("text-processor: get document: %w", err)
 	}
@@ -138,7 +137,7 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
 
 	// Step 2: Chunk immediately (was Chunker)
 	chunkStart := time.Now()
-	chunks := w.slidingWindowChunk(normalized.Segments, courseID, docID)
+	chunks := w.slidingWindowChunk(normalized.Segments, conversationID, docID)
 	observability.RecordProcessingTime("chunker", time.Since(chunkStart))
 
 	// Step 3: Store chunks in Postgres (skip R2 intermediate)
@@ -151,8 +150,8 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
 	indexerJobID := w.ids.New()
 	indexerJob := &entities.Job{
 		ID:              indexerJobID,
-		CourseID:        courseID,
-		DocumentID:      &docID,
+		ConversationID:  conversationID,
+		DocumentID:      docID,
 		Stage:           entities.JobStageIndexing,
 		Status:          entities.JobStatusQueued,
 		MaxAttempts:     3,
@@ -171,10 +170,10 @@ func (w *TextProcessorWorker) process(ctx context.Context, courseID, docID, trac
 	return w.queue.Publish(ctx, "pipeline:text-processed", provider.Event{
 		Name: "TEXT_PROCESSED",
 		Payload: map[string]any{
-			"course_id":   courseID,
-			"document_id": docID,
-			"chunks":      string(chunkData),
-			"job_id":      indexerJobID,
+			"conversation_id": conversationID,
+			"document_id":     docID,
+			"chunks":          string(chunkData),
+			"job_id":          indexerJobID,
 		},
 		TraceID: traceID,
 	})
@@ -226,7 +225,7 @@ func (w *TextProcessorWorker) extractText(ctx context.Context, doc *entities.Doc
 	}
 }
 
-func (w *TextProcessorWorker) slidingWindowChunk(segs []entities.Segment, courseID, docID string) []entities.Chunk {
+func (w *TextProcessorWorker) slidingWindowChunk(segs []entities.Segment, conversationID, docID string) []entities.Chunk {
 	// Same chunking logic from chunker.go
 	const defaultWindowSize = 20
 	const defaultOverlap = 2
@@ -249,7 +248,7 @@ func (w *TextProcessorWorker) slidingWindowChunk(segs []entities.Segment, course
 		c := entities.Chunk{
 			ID:               w.ids.New(),
 			DocumentID:       docID,
-			CourseID:         courseID,
+			ConversationID:   conversationID,
 			Content:          content,
 			TokenCount:       len(content) / 4,
 			EmbeddingVersion: "text-embedding-3-small-v1",
