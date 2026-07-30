@@ -557,16 +557,20 @@ export default function ChatPage() {
       const decoder = new TextDecoder();
       let assistantContent = "";
       let citationsBuffer: Message["citations"] = [];
+      let streamBuffer = "";
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-        const chunkText = decoder.decode(value, { stream: true });
-        const lines = chunkText.split("\n");
+        streamBuffer += decoder.decode(value, { stream: true });
+        const lines = streamBuffer.split("\n");
+        // Keep incomplete trailing line in buffer for next chunk read
+        streamBuffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const raw = line.replace("data: ", "").trim();
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+          const raw = trimmed.replace("data: ", "").trim();
 
           if (raw === "[DONE]") {
             break;
@@ -575,26 +579,34 @@ export default function ChatPage() {
               const resObj = JSON.parse(raw.replace("[RESULT]", "").trim());
               if (resObj.citations && resObj.citations.length > 0) {
                 citationsBuffer = resObj.citations;
-                setMessages((prev) =>
-                  prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, citations: resObj.citations } : msg))
-                );
               }
-            } catch { /* ignore parse error */ }
+            } catch (err) {
+              console.error("Failed to parse SSE RESULT JSON:", err);
+            }
           } else if (raw.startsWith("[ERROR:")) {
             assistantContent += `\n\n*Error: ${raw}*`;
-            setMessages((prev) =>
-              prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: assistantContent } : msg))
-            );
           } else {
             assistantContent += raw;
-            setMessages((prev) =>
-              prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: assistantContent, citations: citationsBuffer } : msg))
-            );
           }
+
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMsgId
+                ? { ...msg, content: assistantContent, citations: citationsBuffer }
+                : msg
+            )
+          );
         }
       }
 
-      setMessages((prev) => prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: assistantContent, citations: citationsBuffer } : msg)));
+      // Final state update ensuring citations and full content are attached
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMsgId
+            ? { ...msg, content: assistantContent, citations: citationsBuffer }
+            : msg
+        )
+      );
     } catch {
       setMessages((prev) => prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: "Sorry, an error occurred while streaming the response." } : msg)));
     } finally {
@@ -718,6 +730,16 @@ export default function ChatPage() {
                     ? "Your source is still indexing — you can ask now, or wait a moment for grounded citations."
                     : "Ask a question — answers are grounded in the sources you've added to this conversation."}
               </p>
+              {documents.find((d) => d.status === "INDEXED" && d.ai_overview) && (
+                <div style={{ marginTop: "16px", padding: "12px 16px", borderRadius: "var(--radius-md)", background: "var(--color-surface-container-high)", border: "1px solid var(--color-accent-border)", textAlign: "left" }}>
+                  <span style={{ fontSize: "11px", fontFamily: "var(--font-geist)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--color-tertiary)" }}>
+                    ✨ Source Overview
+                  </span>
+                  <p style={{ margin: "6px 0 0 0", fontSize: "13px", lineHeight: 1.5, color: "var(--color-on-surface)" }}>
+                    {documents.find((d) => d.status === "INDEXED" && d.ai_overview)?.ai_overview}
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             messages.map((m) => (
@@ -784,36 +806,39 @@ export default function ChatPage() {
         {/* ── Dynamic NotebookLM Suggested Questions from Indexed Documents ── */}
         {messages.length === 0 && documents.some((d) => d.status === "INDEXED") && (
           <div style={{ padding: "0 clamp(16px, 5vw, 64px) 10px", display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
-            {documents
-              .filter((d) => d.status === "INDEXED")
-              .flatMap((d) => {
+            {(() => {
+              const indexedDocs = documents.filter((d) => d.status === "INDEXED");
+              const aiQuestions = indexedDocs.flatMap((d) => d.ai_questions || []);
+              if (aiQuestions.length > 0) {
+                return aiQuestions.slice(0, 4);
+              }
+              return indexedDocs.flatMap((d) => {
                 const title = cleanFilename(d.original_filename);
                 return [
                   `What are the key concepts in ${title}?`,
                   `Summarize the main takeaways from ${title}`,
                 ];
-              })
-              .slice(0, 3)
-              .map((q, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setInput(q)}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: "var(--radius-full)",
-                    background: "var(--color-surface-container-high)",
-                    border: "1px solid var(--color-accent-border)",
-                    color: "var(--color-on-surface)",
-                    fontSize: "12px",
-                    fontFamily: "var(--font-geist)",
-                    cursor: "pointer",
-                    transition: "all var(--transition-fast)",
-                  }}
-                >
-                  💡 {q}
-                </button>
-              ))}
+              }).slice(0, 4);
+            })().map((q, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setInput(q)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: "var(--radius-full)",
+                  background: "var(--color-surface-container-high)",
+                  border: "1px solid var(--color-accent-border)",
+                  color: "var(--color-on-surface)",
+                  fontSize: "12px",
+                  fontFamily: "var(--font-geist)",
+                  cursor: "pointer",
+                  transition: "all var(--transition-fast)",
+                }}
+              >
+                💡 {q}
+              </button>
+            ))}
           </div>
         )}
 
@@ -876,7 +901,10 @@ export default function ChatPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleDeleteDocument(d.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteDocument(d.id);
+                  }}
                   title="Remove source"
                   style={{ background: "none", border: "none", color: "var(--color-on-surface-variant)", cursor: "pointer", display: "flex", flexShrink: 0, padding: "2px" }}
                 >
@@ -1134,7 +1162,7 @@ export default function ChatPage() {
 
               <div style={{ background: "var(--color-surface-container-lowest)", padding: "18px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-outline-variant)", maxHeight: "360px", overflowY: "auto" }}>
                 <p style={{ fontSize: "13.5px", lineHeight: 1.7, margin: 0, color: "var(--color-on-surface)", whiteSpace: "pre-wrap" }}>
-                  {selectedDocSummary.summary || "Generating AI Source Guide summary..."}
+                  {selectedDocSummary.ai_summary || selectedDocSummary.summary || "Generating AI Source Guide summary..."}
                 </p>
               </div>
 

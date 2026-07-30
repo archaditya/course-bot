@@ -43,6 +43,9 @@ export interface DocumentItem {
 	status: DocumentStatus;
 	created_at: string;
 	summary?: string;
+	ai_summary?: string;
+	ai_questions?: string[];
+	ai_overview?: string;
 }
 export interface UploadResult { conversation_id: string; document_ids: string[] }
 

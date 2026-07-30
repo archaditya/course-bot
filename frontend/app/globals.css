@@ -358,15 +358,21 @@ code, pre {
 
 /* Prose reading style for grounded assistant answers */
 .answer-prose {
-  font-family: var(--font-serif);
-  font-size: 15.5px;
-  line-height: 1.75;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 14.5px;
+  line-height: 1.7;
   color: var(--color-on-surface);
+}
+.answer-prose h1, .answer-prose h2, .answer-prose h3 {
+  font-family: var(--font-geist), sans-serif;
+  font-weight: 700;
+  color: var(--color-on-surface);
+  margin: 1.2em 0 0.5em 0;
 }
 .answer-prose p { margin: 0 0 0.9em 0; }
 .answer-prose p:last-child { margin-bottom: 0; }
 .answer-prose strong { color: var(--color-primary-fixed); font-weight: 600; }
-.answer-prose ul, .answer-prose ol { margin: 0 0 0.9em 1.3em; }
+.answer-prose ul, .answer-prose ol { margin: 0 0 0.9em 1.3em; padding: 0; }
 .answer-prose li { margin-bottom: 0.35em; }
 .answer-prose code {
   background: var(--color-surface-container-high);

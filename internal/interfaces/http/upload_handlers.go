@@ -9,6 +9,7 @@ import (
 	"archadilm/internal/application/upload"
 	"archadilm/internal/domain/repository"
 	"archadilm/internal/infrastructure/observability"
+	rediscache "archadilm/internal/infrastructure/redis"
 	sentry "github.com/getsentry/sentry-go"
 )
 
@@ -22,10 +23,11 @@ type UploadHandler struct {
 	svc       *upload.Service
 	documents repository.DocumentRepository
 	chunks    repository.ChunkRepository
+	cache     *rediscache.Cache
 }
 
-func NewUploadHandler(svc *upload.Service, documents repository.DocumentRepository, chunks repository.ChunkRepository) *UploadHandler {
-	return &UploadHandler{svc: svc, documents: documents, chunks: chunks}
+func NewUploadHandler(svc *upload.Service, documents repository.DocumentRepository, chunks repository.ChunkRepository, cache *rediscache.Cache) *UploadHandler {
+	return &UploadHandler{svc: svc, documents: documents, chunks: chunks, cache: cache}
 }
 
 func (h *UploadHandler) Register(mux *http.ServeMux) {
@@ -101,6 +103,10 @@ func (h *UploadHandler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.cache != nil {
+		h.cache.InvalidateConversation(r.Context(), conversationID)
+	}
+
 	writeJSON(w, http.StatusAccepted, result)
 }
 
@@ -160,6 +166,10 @@ func (h *UploadHandler) handleAddSource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if h.cache != nil {
+		h.cache.InvalidateConversation(r.Context(), conversationID)
+	}
+
 	writeJSON(w, http.StatusAccepted, result)
 }
 
@@ -178,17 +188,6 @@ func (h *UploadHandler) listDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]map[string]any, len(docs))
 	for i, d := range docs {
-		var summary string
-		if h.chunks != nil {
-			docChunks, err := h.chunks.ListByDocument(r.Context(), d.ID)
-			if err == nil && len(docChunks) > 0 {
-				summary = docChunks[0].Summary
-				if summary == "" {
-					summary = docChunks[0].Content
-				}
-			}
-		}
-
 		items[i] = map[string]any{
 			"id":                d.ID,
 			"original_filename": d.OriginalFilename,
@@ -196,7 +195,9 @@ func (h *UploadHandler) listDocuments(w http.ResponseWriter, r *http.Request) {
 			"source_url":        d.SourceURL,
 			"status":            d.Status,
 			"created_at":        d.CreatedAt,
-			"summary":           summary,
+			"ai_summary":        d.AISummary,
+			"ai_questions":      d.AIQuestions,
+			"ai_overview":       d.AIOverview,
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -208,9 +209,13 @@ func (h *UploadHandler) deleteDocument(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
 		return
 	}
+	conversationID := r.PathValue("id")
 	if err := h.documents.Delete(r.Context(), claims.WorkspaceID, r.PathValue("docID")); err != nil {
 		notFoundOrInternal(w, err, "DOCUMENT_NOT_FOUND", "Document not found.")
 		return
+	}
+	if h.cache != nil && conversationID != "" {
+		h.cache.InvalidateConversation(r.Context(), conversationID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

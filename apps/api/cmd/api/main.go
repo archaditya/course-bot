@@ -102,6 +102,9 @@ func main() {
 	// ── Application services ───────────────────────────────────────────────
 	authService := authapp.NewService(users, workspaces, refreshTokens, cfg.Auth.JWTSigningKey)
 
+	// Redis cache for chat responses — reuses the queue's Redis connection
+	chatCache := redisinfra.NewCache(queue.Client())
+
 	var uploadService *uploadapp.Service
 	if objects != nil && queue != nil {
 		uploadService = uploadapp.NewService(conversations, documents, jobs, objects, queue, ids)
@@ -113,6 +116,7 @@ func main() {
 			conversations, messages, citations, chunks,
 			aiClient, vectors, aiClient,
 			cfg.Flags.MaxEvaluatorRetries, ids,
+			chatCache,
 		)
 	}
 
@@ -122,7 +126,7 @@ func main() {
 	deps := httpapi.Dependencies{
 		JWTSigningKey: cfg.Auth.JWTSigningKey,
 		AuthHandler:   httpapi.NewAuthHandler(authService),
-		UploadHandler: httpapi.NewUploadHandler(uploadService, documents, chunks),
+		UploadHandler: httpapi.NewUploadHandler(uploadService, documents, chunks, chatCache),
 		ChatHandler:   httpapi.NewChatHandler(chatService),
 		StatusHandler: statusHandler,
 

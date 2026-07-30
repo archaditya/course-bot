@@ -193,6 +193,7 @@ func (w *TextProcessorWorker) extractText(ctx context.Context, doc *entities.Doc
 			return nil, fmt.Errorf("text-processor: srt: %w", err)
 		}
 		return normalized, nil
+
 	case entities.SourceTypeVTT:
 		rawData, err := w.objects.Get(ctx, doc.StoragePath)
 		if err != nil {
@@ -203,12 +204,36 @@ func (w *TextProcessorWorker) extractText(ctx context.Context, doc *entities.Doc
 			return nil, fmt.Errorf("text-processor: vtt: %w", err)
 		}
 		return normalized, nil
+
+	case entities.SourceTypePDF:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: get raw file: %w", err)
+		}
+		normalized, err := parsePDF(rawData, doc, w.aiClient)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: pdf: %w", err)
+		}
+		return normalized, nil
+
+	case entities.SourceTypeDOCX:
+		rawData, err := w.objects.Get(ctx, doc.StoragePath)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: get raw file: %w", err)
+		}
+		normalized, err := parseText(rawData, doc)
+		if err != nil {
+			return nil, fmt.Errorf("text-processor: docx: %w", err)
+		}
+		return normalized, nil
+
 	case entities.SourceTypeURL, entities.SourceTypeVideo:
 		normalized, err := parseURL(doc, w.aiClient, w.allowedURLDomains)
 		if err != nil {
 			return nil, fmt.Errorf("text-processor: url: %w", err)
 		}
 		return normalized, nil
+
 	case entities.SourceTypeText:
 		rawData, err := w.objects.Get(ctx, doc.StoragePath)
 		if err != nil {
@@ -219,11 +244,12 @@ func (w *TextProcessorWorker) extractText(ctx context.Context, doc *entities.Doc
 			return nil, fmt.Errorf("text-processor: text: %w", err)
 		}
 		return normalized, nil
-	// ... handle other source types ...
+
 	default:
 		return nil, fmt.Errorf("text-processor: unsupported source type %q", doc.SourceType)
 	}
 }
+
 
 func (w *TextProcessorWorker) slidingWindowChunk(segs []entities.Segment, conversationID, docID string) []entities.Chunk {
 	// Same chunking logic from chunker.go

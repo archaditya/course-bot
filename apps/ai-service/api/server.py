@@ -7,6 +7,7 @@ from api.schemas import (
     EmbeddingRequest, EmbeddingResponse,
     TitleGenerationRequest, TitleGenerationResponse,
     SummaryGenerationRequest, SummaryGenerationResponse,
+    SourceIntelRequest, SourceIntelResponse,
     RetrievalRequest, RetrievalResponse,
     RerankRequest, RerankResponse,
     GenerationRequest, GenerationResponse,
@@ -19,7 +20,7 @@ from api.schemas import (
 from app.providers import get_embedding_provider, get_llm_provider, get_reranker_provider, get_guardrail_provider
 from app.embedding.service import EmbeddingService
 from app.title_generator.service import TitleGeneratorService
-from app.summary_generator.service import SummaryGeneratorService
+from app.summary_generator.service import SourceIntelService
 from app.retriever.service import RetrieverService
 from app.retriever.qdrant_client import QdrantClient
 from app.retriever.bm25 import BM25Retriever
@@ -52,7 +53,7 @@ guardrail_provider = get_guardrail_provider()
 
 embedding_service = EmbeddingService(embedding_provider)
 title_generator = TitleGeneratorService(llm_provider)
-summary_generator = SummaryGeneratorService(llm_provider)
+source_intel = SourceIntelService(llm_provider)
 reranker = RerankerService(reranker_provider)
 generator = GeneratorService(llm_provider)
 evaluator = EvaluatorService(llm_provider)
@@ -103,13 +104,31 @@ async def generate_title(request: TitleGenerationRequest):
 
 @app.post("/generate-summary", response_model=SummaryGenerationResponse)
 async def generate_summary(request: SummaryGenerationRequest):
-    """Generate a summary for content."""
+    """Generate a summary for content (backward-compatible)."""
     try:
-        summary = await summary_generator.generate_summary(
+        summary = await source_intel.generate_summary(
             request.content,
             request.prompt_version
         )
         return SummaryGenerationResponse(summary=summary)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/generate-source-intel", response_model=SourceIntelResponse)
+async def generate_source_intel(request: SourceIntelRequest):
+    """Generate NotebookLM-style source intelligence: summary, questions, overview."""
+    try:
+        result = await source_intel.generate_intel(
+            content=request.content,
+            filename=request.filename,
+            prompt_version=request.prompt_version,
+        )
+        return SourceIntelResponse(
+            summary=result.summary,
+            questions=result.questions,
+            overview=result.overview,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

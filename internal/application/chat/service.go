@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"archadilm/internal/domain/provider"
 	"archadilm/internal/domain/repository"
 	"archadilm/internal/infrastructure/llm"
+	rediscache "archadilm/internal/infrastructure/redis"
 )
 
 // Service owns the chat (query pipeline) use case. Retrieval is always
@@ -27,6 +29,7 @@ type Service struct {
 	evaluator     provider.EvaluatorProvider
 	vectors       provider.VectorStore
 	embedder      provider.EmbeddingProvider
+	cache         *rediscache.Cache
 	maxRetries    int
 	ids           provider.IDGenerator
 }
@@ -41,6 +44,7 @@ func NewService(
 	embedder provider.EmbeddingProvider,
 	maxRetries int,
 	ids provider.IDGenerator,
+	cache *rediscache.Cache,
 ) *Service {
 	return &Service{
 		conversations: conversations,
@@ -52,6 +56,7 @@ func NewService(
 		evaluator:     aiClient,
 		vectors:       vectors,
 		embedder:      embedder,
+		cache:         cache,
 		maxRetries:    maxRetries,
 		ids:           ids,
 	}
@@ -135,6 +140,43 @@ func (s *Service) Send(
 		// FAST-PATH ROUTE: Skip Guardrails, HyDE & Qdrant Search (<200ms TTFT)
 		context_ = "User is engaging in casual greeting or smalltalk. Respond warmly and concisely."
 	} else {
+		// ── Cache Hit Path: serve cached response instantly ────────────────
+		if s.cache != nil {
+			if cached, ok := s.cache.Get(ctx, conversationID, userContent); ok {
+				var cachedResult MessageResult
+				if err := json.Unmarshal([]byte(cached), &cachedResult); err == nil {
+					log.Printf("chat: CACHE HIT for conversation=%s", conversationID)
+
+					// Stream cached content in word-sized chunks for natural UX
+					words := strings.Fields(cachedResult.Content)
+					for i, w := range words {
+						if i > 0 {
+							tokenCh <- StreamToken{Text: " "}
+						}
+						tokenCh <- StreamToken{Text: w}
+					}
+					tokenCh <- StreamToken{Done: true}
+
+					// Persist assistant message for history
+					assistantMsg := &entities.Message{
+						ID:             s.ids.New(),
+						ConversationID: conversationID,
+						Role:           entities.MessageRoleAssistant,
+						Content:        cachedResult.Content,
+						Status:         entities.MessageStatusCompleted,
+					}
+					_ = s.messages.Create(ctx, assistantMsg)
+
+					return &MessageResult{
+						MessageID:  assistantMsg.ID,
+						Content:    cachedResult.Content,
+						Citations:  cachedResult.Citations,
+						Confidence: cachedResult.Confidence,
+					}, nil
+				}
+			}
+		}
+
 		// KNOWLEDGE / MEMORY ROUTE: Execute full RAG pipeline
 
 		// ── Step 1: Guardrails ───────────────────────────────────────────────
@@ -296,11 +338,19 @@ func (s *Service) Send(
 	var bestContent string
 	confidence := "normal"
 
+	// Always signal stream completion, even if all retries fail.
+	streamCompleted := false
+	defer func() {
+		if !streamCompleted {
+			tokenCh <- StreamToken{Done: true}
+		}
+	}()
+
 	for attempt := 1; attempt <= s.maxRetries; attempt++ {
 		prompt := provider.Prompt{
-			System: "You are an expert technical assistant. Answer the user's question clearly and thoroughly using the provided context as primary source material. Combine the context details into a cohesive, professional answer.",
+			System: `You are a knowledgeable study partner having a one-on-one conversation. Answer naturally and directly — never say "the provided context", "based on the context", "the material does not contain", or similar phrases. If the reference material covers the topic, weave its details into a clear answer. If it doesn't fully cover it, supplement with your own knowledge seamlessly. Use markdown: ## headings, **bold** key terms, and - bullet lists for readability.`,
 			Messages: []provider.PromptMessage{
-				{Role: "user", Content: fmt.Sprintf("Context:\n%s\n\nQuestion: %s", context_, userContent)},
+				{Role: "user", Content: fmt.Sprintf("Reference material:\n%s\n\nUser question: %s", context_, userContent)},
 			},
 			PromptVersion: "1.0",
 		}
@@ -323,7 +373,14 @@ func (s *Service) Send(
 		break
 	}
 
+	// If all retries failed, send a friendly message instead of leaving the stream stuck
+	if bestContent == "" {
+		bestContent = "Hmm, I'm having trouble generating a response right now. Could you try rephrasing your question or asking something different? 🔄"
+		tokenCh <- StreamToken{Text: bestContent}
+	}
+
 	tokenCh <- StreamToken{Done: true}
+	streamCompleted = true
 
 	// ── Step 10: Persist Assistant Message, Citations & Log Metrics ───────
 	msgStatus := entities.MessageStatusCompleted
@@ -380,12 +437,21 @@ func (s *Service) Send(
 		isFastRoute, usedVector, len(citResults), time.Since(startTime), previewText)
 
 
-	return &MessageResult{
+	result := &MessageResult{
 		MessageID:  assistantMsg.ID,
 		Content:    bestContent,
 		Citations:  citResults,
 		Confidence: confidence,
-	}, nil
+	}
+
+	// Cache the result for knowledge-route queries (15 min TTL)
+	if s.cache != nil && usedVector {
+		if cacheJSON, err := json.Marshal(result); err == nil {
+			s.cache.Set(ctx, conversationID, userContent, string(cacheJSON), 15*time.Minute)
+		}
+	}
+
+	return result, nil
 }
 
 func (s *Service) ListConversations(ctx context.Context, ws repository.WorkspaceID) ([]*entities.Conversation, string, error) {
