@@ -10,22 +10,30 @@ import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isAuthenticated, isLoading } = useAuth();
+  const { login, isAuthenticated, isLoading, user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/chat");
+      if (user?.role === "admin") {
+        router.replace("/admin");
+      } else {
+        router.replace("/chat");
+      }
     }
-  }, [isLoading, isAuthenticated, router]);
+  }, [isLoading, isAuthenticated, user, router]);
 
   const { mutate, isPending, error } = useMutation({
     mutationFn: () => apiLogin(email, password),
     onSuccess: (data) => {
       login(data);
-      router.push("/chat");
+      if (data.user?.role === "admin") {
+        router.push("/admin");
+      } else {
+        router.push("/chat");
+      }
     },
   });
 

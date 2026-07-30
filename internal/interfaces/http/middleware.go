@@ -46,3 +46,16 @@ func ClaimsFromContext(ctx context.Context) (*security.AccessClaims, bool) {
 	claims, ok := ctx.Value(claimsContextKey).(*security.AccessClaims)
 	return claims, ok
 }
+
+// RequireAdmin verifies that the caller has admin privileges (Role == "admin").
+// Must be chained after RequireAuth.
+func RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := ClaimsFromContext(r.Context())
+		if !ok || claims.Role != "admin" {
+			WriteError(w, http.StatusForbidden, "ADMIN_REQUIRED", "Administrator privileges required.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}

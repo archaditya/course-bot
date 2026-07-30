@@ -121,6 +121,7 @@ func main() {
 	}
 
 	statusHandler := httpapi.NewStatusHandler(documents, jobs)
+	adminHandler := httpapi.NewAdminHandler(users)
 
 	// ── HTTP wiring ────────────────────────────────────────────────────────
 	deps := httpapi.Dependencies{
@@ -129,6 +130,7 @@ func main() {
 		UploadHandler: httpapi.NewUploadHandler(uploadService, documents, chunks, chatCache),
 		ChatHandler:   httpapi.NewChatHandler(chatService),
 		StatusHandler: statusHandler,
+		AdminHandler:  adminHandler,
 
 		// Add health check dependencies
 		RedisClient: queue,

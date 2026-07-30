@@ -54,6 +54,7 @@ type Dependencies struct {
 	UploadHandler *UploadHandler
 	ChatHandler   *ChatHandler
 	StatusHandler *StatusHandler
+	AdminHandler  *AdminHandler
 
 	RedisClient  pinger // *redis.Queue (infrastructure/redis)
 	PostgresDB   *sql.DB
@@ -107,13 +108,18 @@ func NewRouter(deps Dependencies) http.Handler {
 	deps.UploadHandler.Register(protected)
 	deps.ChatHandler.Register(protected)
 	deps.StatusHandler.Register(protected)
-	protected.HandleFunc("GET /auth/me", deps.AuthHandler.me)
+
+	adminMux := http.NewServeMux()
+	if deps.AdminHandler != nil {
+		deps.AdminHandler.Register(adminMux)
+	}
 
 	top := http.NewServeMux()
 	top.Handle("/", public)
 
 	// Protected route prefixes — All require valid Bearer token + rate limit
 	auth := RequireAuth(deps.JWTSigningKey)
+	adminAuth := RequireAdmin
 	rateLimited := RateLimitMiddleware(rateLimiter)
 
 	top.Handle("/auth/me", auth(protected))
@@ -121,6 +127,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	top.Handle("/conversations/", auth(rateLimited(protected))) // ADD rateLimited
 	top.Handle("/documents/", auth(rateLimited(protected)))     // ADD rateLimited
 	top.Handle("/chunks/", auth(rateLimited(protected)))        // ADD rateLimited
+	top.Handle("/admin/", auth(adminAuth(adminMux)))
 
 	return Recovery(SecurityHeaders(CORS(Logging(top))))
 }
