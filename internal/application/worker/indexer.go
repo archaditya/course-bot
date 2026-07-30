@@ -118,7 +118,10 @@ func (w *IndexerWorker) process(ctx context.Context, conversationID, chunksJSON,
 		chunks[i].Title, chunks[i].Summary = localMetadata(chunks[i].Content)
 	}
 
-	// Generate AI Source Guide for the main document
+	// Generate AI source intelligence (summary + questions + overview) in one call
+	var aiSummary string
+	var aiQuestions []string
+	var aiOverview string
 	if len(chunks) > 0 {
 		var combinedContent strings.Builder
 		for i, c := range chunks {
@@ -127,7 +130,17 @@ func (w *IndexerWorker) process(ctx context.Context, conversationID, chunksJSON,
 			}
 			combinedContent.WriteString(c.Content + "\n")
 		}
-		if aiSummary, err := w.aiClient.GenerateSummary(ctx, combinedContent.String(), "1.0"); err == nil && aiSummary != "" {
+		filename := ""
+		if doc, err := w.documents.GetByIDInternal(ctx, chunks[0].DocumentID); err == nil {
+			filename = doc.OriginalFilename
+		}
+		intel, err := w.aiClient.GenerateSourceIntel(ctx, combinedContent.String(), filename, "1.0")
+		if err != nil {
+			log.Printf("indexer: source intel generation failed (non-fatal): %v", err)
+		} else {
+			aiSummary = intel.Summary
+			aiQuestions = intel.Questions
+			aiOverview = intel.Overview
 			chunks[0].Summary = aiSummary
 		}
 	}
@@ -176,6 +189,13 @@ func (w *IndexerWorker) process(ctx context.Context, conversationID, chunksJSON,
 	}
 	if err := w.chunks.CreateBatch(ctx, chunkPtrs); err != nil {
 		return fmt.Errorf("indexer: write chunks to postgres: %w", err)
+	}
+
+	// Step 6: Persist AI source intelligence to the document record
+	if len(chunks) > 0 && (aiSummary != "" || len(aiQuestions) > 0 || aiOverview != "") {
+		if err := w.documents.UpdateIntel(ctx, chunks[0].DocumentID, aiSummary, aiQuestions, aiOverview); err != nil {
+			log.Printf("indexer: persist source intel (non-fatal): %v", err)
+		}
 	}
 
 	return nil

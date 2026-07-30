@@ -236,7 +236,7 @@ func (c *Client) Stream(ctx context.Context, prompt provider.Prompt) (<-chan pro
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/plain")
 
-	streamClient := &http.Client{}
+	streamClient := &http.Client{Timeout: 45 * time.Second}
 	resp, err := streamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("llm: stream do: %w", err)
@@ -393,6 +393,35 @@ func (c *Client) GenerateSummary(ctx context.Context, content, promptVersion str
 		return "", fmt.Errorf("llm: generate-summary: %w", err)
 	}
 	return resp.Summary, nil
+}
+
+// ── 6b. Source Intelligence (summary + questions + overview in one call) ──
+
+// SourceIntel is the structured result from /generate-source-intel.
+type SourceIntel struct {
+	Summary   string   `json:"summary"`
+	Questions []string `json:"questions"`
+	Overview  string   `json:"overview"`
+}
+
+type sourceIntelRequest struct {
+	Content       string `json:"content"`
+	Filename      string `json:"filename"`
+	PromptVersion string `json:"prompt_version"`
+}
+
+// GenerateSourceIntel calls the AI Service to produce NotebookLM-style
+// source intelligence: summary, suggested questions, and welcome overview.
+func (c *Client) GenerateSourceIntel(ctx context.Context, content, filename, promptVersion string) (*SourceIntel, error) {
+	var resp SourceIntel
+	if err := c.postJSON(ctx, "/generate-source-intel", sourceIntelRequest{
+		Content:       content,
+		Filename:      filename,
+		PromptVersion: promptVersion,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("llm: generate-source-intel: %w", err)
+	}
+	return &resp, nil
 }
 
 // ── 7. Advanced RAG Pipeline Methods ──────────────────────────────────────

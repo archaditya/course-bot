@@ -29,6 +29,18 @@ class SummaryGenerationResponse(BaseModel):
     summary: str
 
 
+class SourceIntelRequest(BaseModel):
+    content: str
+    filename: str
+    prompt_version: Optional[str] = "1.0"
+
+
+class SourceIntelResponse(BaseModel):
+    summary: str
+    questions: List[str]
+    overview: str
+
+
 class ChunkData(BaseModel):
     chunk_id: str
     document_id: Optional[str] = None

@@ -94,8 +94,12 @@ type Document struct {
 	NormalizationVersion *string
 	OriginalFilename     string
 	Checksum             string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	// AI-generated source intelligence — populated after indexing completes.
+	AISummary   string   // NotebookLM-style 2-paragraph Source Guide
+	AIQuestions []string // content-specific suggested questions
+	AIOverview  string   // friendly welcome message for the user
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // NormalizedDocument is the shared intermediate shape every parser converges

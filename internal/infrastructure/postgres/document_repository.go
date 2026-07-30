@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -33,7 +34,8 @@ func (r *documentRepository) Create(ctx context.Context, ws string, d *entities.
 
 const documentSelect = `
 	SELECT d.id, d.conversation_id, d.source_type, d.status, d.storage_path, d.source_url,
-	       d.normalized_ref, d.normalization_version, d.original_filename, d.checksum, d.created_at, d.updated_at
+	       d.normalized_ref, d.normalization_version, d.original_filename, d.checksum,
+	       d.ai_summary, d.ai_questions, d.ai_overview, d.created_at, d.updated_at
 	FROM documents d`
 
 func (r *documentRepository) GetByID(ctx context.Context, ws string, id string) (*entities.Document, error) {
@@ -104,7 +106,12 @@ func scanDocumentFields(s documentScanner) (*entities.Document, error) {
 	var d entities.Document
 	var sourceType, status string
 	var sourceURL, normalizedRef, normalizationVersion sql.NullString
-	err := s.Scan(&d.ID, &d.ConversationID, &sourceType, &status, &d.StoragePath, &sourceURL, &normalizedRef, &normalizationVersion, &d.OriginalFilename, &d.Checksum, &d.CreatedAt, &d.UpdatedAt)
+	var aiQuestionsJSON []byte
+	err := s.Scan(
+		&d.ID, &d.ConversationID, &sourceType, &status, &d.StoragePath, &sourceURL,
+		&normalizedRef, &normalizationVersion, &d.OriginalFilename, &d.Checksum,
+		&d.AISummary, &aiQuestionsJSON, &d.AIOverview, &d.CreatedAt, &d.UpdatedAt,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +125,9 @@ func scanDocumentFields(s documentScanner) (*entities.Document, error) {
 	}
 	if normalizationVersion.Valid {
 		d.NormalizationVersion = &normalizationVersion.String
+	}
+	if len(aiQuestionsJSON) > 0 {
+		_ = json.Unmarshal(aiQuestionsJSON, &d.AIQuestions)
 	}
 	return &d, nil
 }
@@ -151,6 +161,20 @@ func (r *documentRepository) UpdateOriginalFilename(ctx context.Context, id stri
 		WHERE id = $1
 	`
 	_, err := r.db.ExecContext(ctx, query, id, filename)
+	return err
+}
+
+func (r *documentRepository) UpdateIntel(ctx context.Context, id string, summary string, questions []string, overview string) error {
+	qJSON, err := json.Marshal(questions)
+	if err != nil {
+		return fmt.Errorf("document: marshal questions: %w", err)
+	}
+	const query = `
+		UPDATE documents
+		SET ai_summary = $2, ai_questions = $3, ai_overview = $4, updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err = r.db.ExecContext(ctx, query, id, summary, qJSON, overview)
 	return err
 }
 

@@ -68,6 +68,7 @@ type DocumentRepository interface {
 	SetNormalizedData(ctx context.Context, id string, data []byte, version string) error
 	GetNormalizedData(ctx context.Context, id string) ([]byte, string, error)
 	UpdateOriginalFilename(ctx context.Context, id string, filename string) error
+	UpdateIntel(ctx context.Context, id string, summary string, questions []string, overview string) error
 	Delete(ctx context.Context, ws WorkspaceID, id string) error
 }
 
