@@ -16,6 +16,7 @@ var (
 	ErrEmailTaken         = errors.New("auth: email already registered")
 	ErrInvalidCredentials = errors.New("auth: invalid email or password")
 	ErrInvalidRefresh     = errors.New("auth: invalid or expired refresh token")
+	ErrAccountDisabled    = errors.New("auth: your account has been restricted by an administrator")
 )
 
 const (
@@ -54,7 +55,7 @@ func (s *Service) SignUp(ctx context.Context, fullName, email, password string) 
 	if err != nil {
 		return nil, fmt.Errorf("auth: hashing password: %w", err)
 	}
-	user := &entities.User{FullName: fullName, Email: email, PasswordHash: hash, AuthProvider: entities.AuthProviderPassword}
+	user := &entities.User{FullName: fullName, Email: email, PasswordHash: hash, AuthProvider: entities.AuthProviderPassword, Role: entities.UserRoleUser, IsDisabled: false}
 	if err := s.users.Create(ctx, user); err != nil {
 		return nil, fmt.Errorf("auth: creating user: %w", err)
 	}
@@ -74,6 +75,9 @@ func (s *Service) Login(ctx context.Context, email, password string) (*entities.
 		}
 		return nil, Tokens{}, fmt.Errorf("auth: looking up user: %w", err)
 	}
+	if user.IsDisabled {
+		return nil, Tokens{}, ErrAccountDisabled
+	}
 	if user.AuthProvider != entities.AuthProviderPassword {
 		return nil, Tokens{}, ErrInvalidCredentials
 	}
@@ -88,7 +92,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (*entities.
 	if err != nil {
 		return nil, Tokens{}, fmt.Errorf("auth: looking up workspace: %w", err)
 	}
-	tokens, err := s.issueTokens(ctx, user.ID, workspace.ID)
+	tokens, err := s.issueTokens(ctx, user.ID, workspace.ID, string(user.Role))
 	if err != nil {
 		return nil, Tokens{}, err
 	}
@@ -99,6 +103,9 @@ func (s *Service) Profile(ctx context.Context, userID string) (*entities.User, e
 	user, err := s.users.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("auth: get profile: %w", err)
+	}
+	if user.IsDisabled {
+		return nil, ErrAccountDisabled
 	}
 	return user, nil
 }
@@ -115,6 +122,13 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Tokens, err
 	if stored.RevokedAt != nil || time.Now().After(stored.ExpiresAt) {
 		return Tokens{}, ErrInvalidRefresh
 	}
+	user, err := s.users.GetByID(ctx, stored.UserID)
+	if err != nil {
+		return Tokens{}, fmt.Errorf("auth: looking up user: %w", err)
+	}
+	if user.IsDisabled {
+		return Tokens{}, ErrAccountDisabled
+	}
 	workspace, err := s.workspaces.GetByUserID(ctx, stored.UserID)
 	if err != nil {
 		return Tokens{}, fmt.Errorf("auth: looking up workspace: %w", err)
@@ -122,11 +136,14 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Tokens, err
 	if err := s.refreshTokens.Revoke(ctx, stored.ID); err != nil {
 		return Tokens{}, fmt.Errorf("auth: revoking used refresh token: %w", err)
 	}
-	return s.issueTokens(ctx, stored.UserID, workspace.ID)
+	return s.issueTokens(ctx, stored.UserID, workspace.ID, string(user.Role))
 }
 
-func (s *Service) issueTokens(ctx context.Context, userID, workspaceID string) (Tokens, error) {
-	access, err := security.SignAccessToken(s.jwtSigningKey, userID, workspaceID, AccessTokenTTL)
+func (s *Service) issueTokens(ctx context.Context, userID, workspaceID, role string) (Tokens, error) {
+	if role == "" {
+		role = "user"
+	}
+	access, err := security.SignAccessToken(s.jwtSigningKey, userID, workspaceID, role, AccessTokenTTL)
 	if err != nil {
 		return Tokens{}, fmt.Errorf("auth: signing access token: %w", err)
 	}

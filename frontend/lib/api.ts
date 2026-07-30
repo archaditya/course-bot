@@ -2,7 +2,13 @@
 // typed resource functions instead of scattered fetch/XHR implementations.
 export const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
 
-export interface User { id: string; full_name: string; email: string }
+export interface User {
+	id: string;
+	full_name: string;
+	email: string;
+	role?: 'user' | 'admin';
+	is_disabled?: boolean;
+}
 export interface AuthTokens { access_token: string; refresh_token: string; user: User }
 export class ApiError extends Error { constructor(message: string, public readonly status: number, public readonly code?: string) { super(message); this.name = 'ApiError'; } }
 
@@ -10,6 +16,35 @@ export async function apiSignup(fullName: string, email: string, password: strin
 export async function apiLogin(email: string, password: string): Promise<AuthTokens> { return request('/auth/login', { method: 'POST', body: { email, password } }); }
 export async function apiMe(): Promise<User> { return request('/auth/me', { auth: true }); }
 export async function apiRefresh(refresh_token: string): Promise<Pick<AuthTokens, 'access_token' | 'refresh_token'>> { return request('/auth/refresh', { method: 'POST', body: { refresh_token } }); }
+
+// ── Admin Telemetry & Management ──────────────────────────────────────────────
+export interface SystemStats {
+	total_users: number;
+	active_users: number;
+	restricted_users: number;
+	total_conversations: number;
+	total_documents: number;
+	total_messages: number;
+	total_chunks: number;
+}
+
+export interface UserUsageStat {
+	id: string;
+	email: string;
+	full_name: string;
+	role: 'user' | 'admin';
+	is_disabled: boolean;
+	created_at: string;
+	conversation_count: number;
+	document_count: number;
+	message_count: number;
+	chunk_count: number;
+}
+
+export async function apiGetAdminStats(): Promise<SystemStats> { return request('/admin/stats', { auth: true }); }
+export async function apiGetAdminUsers(): Promise<{ items: UserUsageStat[] }> { return request('/admin/users', { auth: true }); }
+export async function apiUpdateUserStatus(userId: string, isDisabled: boolean): Promise<void> { return request(`/admin/users/${userId}/status`, { method: 'PATCH', body: { is_disabled: isDisabled }, auth: true }); }
+export async function apiUpdateUserRole(userId: string, role: 'user' | 'admin'): Promise<void> { return request(`/admin/users/${userId}/role`, { method: 'PATCH', body: { role }, auth: true }); }
 
 // ── Conversations ───────────────────────────────────────────────────────────
 // Every conversation belongs directly to the signed-in user (no project or

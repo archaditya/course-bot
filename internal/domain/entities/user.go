@@ -10,6 +10,13 @@ const (
 	AuthProviderPassword AuthProvider = "password"
 )
 
+type UserRole string
+
+const (
+	UserRoleUser  UserRole = "user"
+	UserRoleAdmin UserRole = "admin"
+)
+
 // User is a person with an account. See docs/03-domain-model.md.
 // A User authenticates via Google or email/password, and owns Workspaces.
 type User struct {
@@ -18,6 +25,8 @@ type User struct {
 	Email        string
 	PasswordHash string // empty when AuthProvider is google
 	AuthProvider AuthProvider
+	Role         UserRole
+	IsDisabled   bool
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

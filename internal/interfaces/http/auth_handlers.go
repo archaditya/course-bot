@@ -19,6 +19,7 @@ func (h *AuthHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/signup", h.signUp)
 	mux.HandleFunc("POST /auth/login", h.login)
 	mux.HandleFunc("POST /auth/refresh", h.refresh)
+	mux.HandleFunc("GET /auth/me", h.me)
 }
 
 type signUpRequest struct {
@@ -34,9 +35,11 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 type userResponse struct {
-	ID       string `json:"id"`
-	FullName string `json:"full_name"`
-	Email    string `json:"email"`
+	ID         string `json:"id"`
+	FullName   string `json:"full_name"`
+	Email      string `json:"email"`
+	Role       string `json:"role"`
+	IsDisabled bool   `json:"is_disabled"`
 }
 type tokenResponse struct {
 	AccessToken  string       `json:"access_token"`
@@ -45,7 +48,13 @@ type tokenResponse struct {
 }
 
 func toUserResponse(user *entities.User) userResponse {
-	return userResponse{ID: user.ID, FullName: user.FullName, Email: user.Email}
+	return userResponse{
+		ID:         user.ID,
+		FullName:   user.FullName,
+		Email:      user.Email,
+		Role:       string(user.Role),
+		IsDisabled: user.IsDisabled,
+	}
 }
 
 func decodeJSON(r *http.Request, dst any) error {
@@ -91,6 +100,10 @@ func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			WriteError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Incorrect email or password.")
+			return
+		}
+		if errors.Is(err, auth.ErrAccountDisabled) {
+			WriteError(w, http.StatusForbidden, "ACCOUNT_RESTRICTED", "Your account has been restricted by an administrator.")
 			return
 		}
 		log.Printf("api: login error: %v", err)

@@ -37,6 +37,10 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id string) (*entities.User, error)
 	GetByEmail(ctx context.Context, email string) (*entities.User, error)
 	Update(ctx context.Context, u *entities.User) error
+	ListUsersWithUsageStats(ctx context.Context) ([]*entities.UserUsageStat, error)
+	GetSystemStats(ctx context.Context) (*entities.SystemStats, error)
+	UpdateRole(ctx context.Context, userID string, role entities.UserRole) error
+	UpdateStatus(ctx context.Context, userID string, isDisabled bool) error
 }
 
 type RefreshTokenRepository interface {

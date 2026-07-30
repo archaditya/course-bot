@@ -10,16 +10,20 @@ import { useAuth } from '@/lib/auth-context';
 
 export default function SignupPage() {
   const router = useRouter();
-  const { login, isAuthenticated, isLoading } = useAuth();
+  const { login, isAuthenticated, isLoading, user } = useAuth();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace('/chat');
+      if (user?.role === 'admin') {
+        router.replace('/admin');
+      } else {
+        router.replace('/chat');
+      }
     }
-  }, [isLoading, isAuthenticated, router]);
+  }, [isLoading, isAuthenticated, user, router]);
 
   const { mutate, isPending, error } = useMutation({
     mutationFn: async () => {
@@ -29,7 +33,11 @@ export default function SignupPage() {
     },
     onSuccess: (tokens) => {
       login(tokens);
-      router.push('/chat');
+      if (tokens.user?.role === 'admin') {
+        router.push('/admin');
+      } else {
+        router.push('/chat');
+      }
     },
   });
 

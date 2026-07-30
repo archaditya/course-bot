@@ -19,6 +19,7 @@ import (
 type AccessClaims struct {
 	UserID      string `json:"sub"`
 	WorkspaceID string `json:"workspace_id"`
+	Role        string `json:"role"`
 	IssuedAt    int64  `json:"iat"`
 	ExpiresAt   int64  `json:"exp"`
 }
@@ -31,11 +32,12 @@ type jwtHeader struct {
 // SignAccessToken issues a short-lived HS256 JWT per
 // docs/08-security.md#jwt-rotation. `ttl` is expected to be minutes, not
 // hours — this is the access token, not the refresh token.
-func SignAccessToken(signingKey string, userID, workspaceID string, ttl time.Duration) (string, error) {
+func SignAccessToken(signingKey string, userID, workspaceID, role string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := AccessClaims{
 		UserID:      userID,
 		WorkspaceID: workspaceID,
+		Role:        role,
 		IssuedAt:    now.Unix(),
 		ExpiresAt:   now.Add(ttl).Unix(),
 	}
