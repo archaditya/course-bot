@@ -2,33 +2,51 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { apiMe, clearTokens, getToken, setTokens, type AuthTokens, type User } from './api';
+import { apiMe, clearTokens, getStoredUser, getToken, setStoredUser, setTokens, type AuthTokens, type User } from './api';
 import { connectWebSocket, disconnectWebSocket } from './ws';
 
 interface AuthContextType { user: User | null; isAuthenticated: boolean; isLoading: boolean; login: (tokens: AuthTokens) => void; logout: () => void; }
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-	const [user, setUser] = useState<User | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
+	const [user, setUser] = useState<User | null>(() => getStoredUser());
+	const [isLoading, setIsLoading] = useState<boolean>(() => {
+		if (typeof window === 'undefined') return true;
+		const token = getToken();
+		const stored = getStoredUser();
+		return !token || !stored;
+	});
 	const queryClient = useQueryClient();
 
 	useEffect(() => {
 		let mounted = true;
 		(async () => {
 			const token = getToken();
-			if (!token) { if (mounted) setIsLoading(false); return; }
+			if (!token) {
+				if (mounted) {
+					setUser(null);
+					setIsLoading(false);
+				}
+				return;
+			}
 			try {
 				const profile = await apiMe();
-				if (mounted) { setUser(profile); connectWebSocket(token); }
-			} catch {
-				clearTokens();
+				if (mounted) {
+					setUser(profile);
+					setStoredUser(profile);
+					connectWebSocket(token);
+				}
+			} catch (err: any) {
+				// Only clear tokens if auth explicitly returns 401
+				if (err?.status === 401) {
+					clearTokens();
+					if (mounted) setUser(null);
+				}
 			} finally {
 				if (mounted) setIsLoading(false);
 			}
 		})();
 		return () => { mounted = false; };
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const value = useMemo(() => ({
@@ -36,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		isAuthenticated: Boolean(user),
 		isLoading,
 		login: (tokens: AuthTokens) => {
-			setTokens(tokens);
+			setTokens(tokens, tokens.user);
 			setUser(tokens.user);
 			setIsLoading(false);
 			connectWebSocket(tokens.access_token);
@@ -44,9 +62,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		logout: () => {
 			clearTokens();
 			disconnectWebSocket();
-			// Wipe every cached query (projects, conversations, chunks…) so the
-			// next person to sign in on this browser/tab never sees a flash of
-			// the previous user's data.
 			queryClient.clear();
 			setUser(null);
 			setIsLoading(false);

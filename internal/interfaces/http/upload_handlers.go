@@ -149,6 +149,10 @@ func (h *UploadHandler) handleAddSource(w http.ResponseWriter, r *http.Request) 
 			WriteError(w, http.StatusBadRequest, "MISSING_CONTENT", "content field is required for text sources.")
 			return
 		}
+		if len(req.Content) > 50000 {
+			WriteError(w, http.StatusBadRequest, "TEXT_TOO_LONG", "Text content exceeds the 50,000 character limit. Please shorten it and try again.")
+			return
+		}
 	case "video_url":
 		if req.URL == "" {
 			WriteError(w, http.StatusBadRequest, "MISSING_URL", "url field is required for video URL sources.")

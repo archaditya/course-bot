@@ -55,6 +55,7 @@ type Dependencies struct {
 	ChatHandler   *ChatHandler
 	StatusHandler *StatusHandler
 	AdminHandler  *AdminHandler
+	LearningHandler *LearningHandler
 
 	RedisClient  pinger // *redis.Queue (infrastructure/redis)
 	PostgresDB   *sql.DB
@@ -108,6 +109,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	deps.UploadHandler.Register(protected)
 	deps.ChatHandler.Register(protected)
 	deps.StatusHandler.Register(protected)
+	if deps.LearningHandler != nil {
+		deps.LearningHandler.Register(protected)
+	}
 
 	adminMux := http.NewServeMux()
 	if deps.AdminHandler != nil {

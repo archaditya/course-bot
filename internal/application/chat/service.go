@@ -134,6 +134,7 @@ func (s *Service) Send(
 
 	var context_ string
 	var rankedChunks []*entities.Chunk
+	var ltmMemories []string
 	usedVector := false
 
 	if isFastRoute {
@@ -203,7 +204,7 @@ func (s *Service) Send(
 			errEnhance, errHyde error
 		)
 
-		wg.Add(2)
+		wg.Add(3)
 		go func() {
 			defer wg.Done()
 			enhanced, errEnhance = s.aiClient.EnhanceQuery(ctx, userContent)
@@ -211,6 +212,10 @@ func (s *Service) Send(
 		go func() {
 			defer wg.Done()
 			hydeDoc, errHyde = s.aiClient.HydeDocument(ctx, userContent)
+		}()
+		go func() {
+			defer wg.Done()
+			ltmMemories, _ = s.aiClient.SearchMemory(ctx, string(ws), userContent)
 		}()
 		wg.Wait()
 
@@ -266,8 +271,15 @@ func (s *Service) Send(
 				log.Printf("chat: vector search error: %v", sr.err)
 				continue
 			}
-			if len(sr.results) > 0 {
-				allResultSets = append(allResultSets, sr.results)
+			// Relevance thresholding: filter out low-similarity chunks (< 0.35 cosine similarity)
+			var relevant []provider.VectorSearchResult
+			for _, r := range sr.results {
+				if r.Score >= 0.35 {
+					relevant = append(relevant, r)
+				}
+			}
+			if len(relevant) > 0 {
+				allResultSets = append(allResultSets, relevant)
 			}
 		}
 
@@ -275,6 +287,71 @@ func (s *Service) Send(
 		mergedResults := reciprocalRankFusion(allResultSets, 20)
 
 		if len(mergedResults) == 0 {
+			// Fallback: Try live web search via Tavily if configured
+			webRes, err := s.aiClient.WebSearch(ctx, userContent)
+			if err == nil && webRes != nil && len(webRes.Results) > 0 {
+				log.Printf("chat: RAG returned 0 results, falling back to TAVILY WEB SEARCH")
+				var webContext strings.Builder
+				webContext.WriteString("🌐 Live Web Search Results:\n\n")
+				for i, res := range webRes.Results {
+					fmt.Fprintf(&webContext, "--- Web Result %d: %s (%s) ---\n%s\n\n", i+1, res.Title, res.URL, res.Content)
+				}
+				context_ = webContext.String()
+
+				// Build web citations
+				var webCitations []CitationResult
+				for _, res := range webRes.Results {
+					webCitations = append(webCitations, CitationResult{
+						ChunkID:    "web-" + s.ids.New(),
+						DocumentID: res.URL,
+						Title:      fmt.Sprintf("🌐 %s", res.Title),
+					})
+				}
+
+				// Generate answer with web context
+				prompt := provider.Prompt{
+					System: `You are a knowledgeable study partner. The user asked a question not found in their uploaded documents, so live web search results were retrieved.
+
+FORMATTING INSTRUCTIONS:
+1. State clearly at the top in 1 sentence that this answer comes from live web search.
+2. Use clean markdown: double newlines between paragraphs, ## Headings, and - bullet points.
+3. Put proper spaces after punctuation and headings (never smash heading titles directly into text).
+4. Do NOT output raw URLs in the text response — web citations are automatically rendered by the interface.`,
+					Messages: []provider.PromptMessage{
+						{Role: "user", Content: fmt.Sprintf("%s\n\nUser question: %s", context_, userContent)},
+					},
+					PromptVersion: "1.0",
+				}
+
+				tokenStream, err := s.aiClient.Stream(ctx, prompt)
+				if err == nil {
+					var webContent string
+					for token := range tokenStream {
+						webContent += token.Text
+						if !token.Done {
+							tokenCh <- StreamToken{Text: token.Text}
+						}
+					}
+					tokenCh <- StreamToken{Done: true}
+
+					assistantMsg := &entities.Message{
+						ID:             s.ids.New(),
+						ConversationID: conversationID,
+						Role:           entities.MessageRoleAssistant,
+						Content:        webContent,
+						Status:         entities.MessageStatusCompleted,
+					}
+					_ = s.messages.Create(ctx, assistantMsg)
+
+					return &MessageResult{
+						MessageID:  assistantMsg.ID,
+						Content:    webContent,
+						Citations:  webCitations,
+						Confidence: "web_search",
+					}, nil
+				}
+			}
+
 			noContent := "I couldn't find anything relevant to that question in this conversation's sources."
 			tokenCh <- StreamToken{Text: noContent, Done: true}
 			return &MessageResult{
@@ -334,7 +411,34 @@ func (s *Service) Send(
 		}
 	}
 
-	// ── Step 9: Stream Response Generation ───────────────────────────────
+	// ── Step 9: Conversational History (STM) & Mem0 Long-Term Memory (LTM) ─────
+	if len(ltmMemories) > 0 {
+		ltmBlock := fmt.Sprintf("User Long-Term Memory Facts:\n- %s\n\n", strings.Join(ltmMemories, "\n- "))
+		context_ = ltmBlock + context_
+	}
+
+	var conversationHistory []provider.PromptMessage
+	pastMsgs, _, errList := s.messages.ListByConversation(ctx, conversationID, "", 10)
+	if errList == nil && len(pastMsgs) > 1 {
+		for _, pm := range pastMsgs {
+			if pm.ID == userMsg.ID {
+				continue
+			}
+			role := "user"
+			if pm.Role == entities.MessageRoleAssistant {
+				role = "assistant"
+			}
+			conversationHistory = append(conversationHistory, provider.PromptMessage{
+				Role:    role,
+				Content: pm.Content,
+			})
+		}
+	}
+	conversationHistory = append(conversationHistory, provider.PromptMessage{
+		Role:    "user",
+		Content: fmt.Sprintf("Reference material:\n%s\n\nUser question: %s", context_, userContent),
+	})
+
 	var bestContent string
 	confidence := "normal"
 
@@ -348,10 +452,14 @@ func (s *Service) Send(
 
 	for attempt := 1; attempt <= s.maxRetries; attempt++ {
 		prompt := provider.Prompt{
-			System: `You are a knowledgeable study partner having a one-on-one conversation. Answer naturally and directly — never say "the provided context", "based on the context", "the material does not contain", or similar phrases. If the reference material covers the topic, weave its details into a clear answer. If it doesn't fully cover it, supplement with your own knowledge seamlessly. Use markdown: ## headings, **bold** key terms, and - bullet lists for readability.`,
-			Messages: []provider.PromptMessage{
-				{Role: "user", Content: fmt.Sprintf("Reference material:\n%s\n\nUser question: %s", context_, userContent)},
-			},
+			System: `You are a knowledgeable study partner having a one-on-one conversation. Answer naturally and directly. Always remember details the user shares about themselves (like their name, background, or preferences) from their Long-Term Memory facts and past conversation messages.
+
+FORMATTING RULES:
+- Use ## Headings for major sections.
+- Use - Bullet lists for features, key concepts, and points.
+- Always put EVERY heading and EVERY bullet point on its own new line with a blank line before it.
+- Never run multiple list items or headings together on the same line.`,
+			Messages:      conversationHistory,
 			PromptVersion: "1.0",
 		}
 
@@ -381,6 +489,15 @@ func (s *Service) Send(
 
 	tokenCh <- StreamToken{Done: true}
 	streamCompleted = true
+
+	// Async Mem0 LTM Fact Extraction
+	go func() {
+		addCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := s.aiClient.AddMemory(addCtx, string(ws), userContent, bestContent); err != nil {
+			log.Printf("chat: mem0 add memory notice: %v", err)
+		}
+	}()
 
 	// ── Step 10: Persist Assistant Message, Citations & Log Metrics ───────
 	msgStatus := entities.MessageStatusCompleted

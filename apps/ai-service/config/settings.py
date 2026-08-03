@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # YouTube API
     youtube_api_key: str = os.getenv("YOUTUBE_API_KEY", "")
 
+    # Web Extraction & Search APIs
+    firecrawl_api_key: str = os.getenv("FIRECRAWL_API_KEY", "")
+    tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
+
 
 
 settings = Settings()
