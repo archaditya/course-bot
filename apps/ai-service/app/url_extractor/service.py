@@ -143,9 +143,16 @@ class URLExtractorService:
                     print(f"Firecrawl status {resp.status_code}: {resp.text[:200]}")
                     return None
 
-                data = resp.json().get("data", {})
-                markdown = data.get("markdown", "").strip()
-                title = data.get("metadata", {}).get("title") or url
+                raw_json = resp.json() or {}
+                data = raw_json.get("data") or {}
+                if not isinstance(data, dict):
+                    data = {}
+
+                markdown = (data.get("markdown") or "").strip()
+                metadata = data.get("metadata") or {}
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                title = metadata.get("title") or url
 
                 if not markdown:
                     return None
@@ -201,9 +208,11 @@ class URLExtractorService:
                 tag.decompose()
 
         for tag in soup.find_all(attrs={"class": True}):
-            classes = " ".join(tag.get("class", [])).lower()
-            if any(noise in classes for noise in self.NOISE_CLASSES):
-                tag.decompose()
+            raw_class = tag.get("class")
+            if raw_class and isinstance(raw_class, list):
+                classes = " ".join(raw_class).lower()
+                if any(noise in classes for noise in self.NOISE_CLASSES):
+                    tag.decompose()
 
         title = soup.title.string.strip() if soup.title and soup.title.string else url
 

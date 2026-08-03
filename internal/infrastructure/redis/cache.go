@@ -46,6 +46,25 @@ func (c *Cache) Set(ctx context.Context, conversationID, userContent, value stri
 	_ = c.client.Set(ctx, key(conversationID, userContent), value, ttl).Err()
 }
 
+// GetRaw retrieves a cached raw string by key.
+func (c *Cache) GetRaw(ctx context.Context, key string) (string, bool) {
+	val, err := c.client.Get(ctx, key).Result()
+	if err != nil {
+		return "", false
+	}
+	return val, true
+}
+
+// SetRaw stores a raw string with the specified TTL.
+func (c *Cache) SetRaw(ctx context.Context, key string, val string, ttl time.Duration) {
+	_ = c.client.Set(ctx, key, val, ttl).Err()
+}
+
+// DelRaw deletes a cached key.
+func (c *Cache) DelRaw(ctx context.Context, key string) {
+	_ = c.client.Del(ctx, key).Err()
+}
+
 // InvalidateConversation removes all cached responses for a conversation.
 // Called when sources are added or deleted so stale answers aren't served.
 func (c *Cache) InvalidateConversation(ctx context.Context, conversationID string) {
