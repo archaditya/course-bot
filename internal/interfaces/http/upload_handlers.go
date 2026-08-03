@@ -35,6 +35,7 @@ func (h *UploadHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /conversations/{id}/documents/source", h.handleAddSource)
 	mux.HandleFunc("GET /conversations/{id}/documents", h.listDocuments)
 	mux.HandleFunc("DELETE /conversations/{id}/documents/{docID}", h.deleteDocument)
+	mux.HandleFunc("GET /documents/{docID}/chunks", h.listChunks)
 }
 
 // upload accepts a multipart file upload — a single PDF/SRT/VTT/DOCX/TXT
@@ -222,4 +223,31 @@ func (h *UploadHandler) deleteDocument(w http.ResponseWriter, r *http.Request) {
 		h.cache.InvalidateConversation(r.Context(), conversationID)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *UploadHandler) listChunks(w http.ResponseWriter, r *http.Request) {
+	docID := r.PathValue("docID")
+	chunks, err := h.chunks.ListByDocument(r.Context(), docID)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not fetch document chunks.")
+		return
+	}
+	items := make([]map[string]any, len(chunks))
+	for i, c := range chunks {
+		items[i] = map[string]any{
+			"id":                c.ID,
+			"document_id":       c.DocumentID,
+			"conversation_id":   c.ConversationID,
+			"start_timestamp":   c.StartTimestamp,
+			"end_timestamp":     c.EndTimestamp,
+			"page_number":       c.PageNumber,
+			"title":             c.Title,
+			"summary":           c.Summary,
+			"content":           c.Content,
+			"token_count":       c.TokenCount,
+			"embedding_version": c.EmbeddingVersion,
+			"created_at":        c.CreatedAt,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }

@@ -124,61 +124,118 @@ class URLExtractorService:
         return URLExtractionResult(title=title, sections=sections)
 
     async def _extract_firecrawl(self, url: str) -> URLExtractionResult | None:
-        """Extracts JS-rendered web content using Firecrawl API."""
+        """Extracts JS-rendered web content using Firecrawl API with sub-page mapping."""
         firecrawl_key = getattr(settings, "firecrawl_api_key", None) or getattr(settings, "FIRECRAWL_API_KEY", None)
         if not firecrawl_key:
             return None
 
         try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                resp = await client.post(
-                    "https://api.firecrawl.dev/v1/scrape",
-                    headers={
-                        "Authorization": f"Bearer {firecrawl_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={"url": url, "formats": ["markdown"]},
-                )
-                if resp.status_code != 200:
-                    print(f"Firecrawl status {resp.status_code}: {resp.text[:200]}")
-                    return None
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                headers = {
+                    "Authorization": f"Bearer {firecrawl_key}",
+                    "Content-Type": "application/json",
+                }
 
-                raw_json = resp.json() or {}
-                data = raw_json.get("data") or {}
-                if not isinstance(data, dict):
-                    data = {}
+                # 1. Discover top sub-pages using Firecrawl Map API
+                target_urls = [url]
+                try:
+                    map_resp = await client.post(
+                        "https://api.firecrawl.dev/v1/map",
+                        headers=headers,
+                        json={"url": url, "limit": 25},
+                    )
+                    if map_resp.status_code == 200:
+                        mapped_links = map_resp.json().get("links", [])
+                        
+                        # Intelligent URL Priority Scoring Algorithm
+                        priority_keywords = [
+                            "about", "about-us", "team", "founders", "people", "leadership",
+                            "services", "solutions", "products", "features", "contact", "contact-us",
+                            "overview", "company", "who-we-are", "portfolio", "case-studies", "work"
+                        ]
+                        noise_keywords = [
+                            "privacy", "terms", "policy", "legal", "cookie", "disclaimer",
+                            "login", "signup", "cart", "tag", "category", "feed", "rss"
+                        ]
 
-                markdown = (data.get("markdown") or "").strip()
-                metadata = data.get("metadata") or {}
-                if not isinstance(metadata, dict):
-                    metadata = {}
-                title = metadata.get("title") or url
+                        def score_url(link: str) -> int:
+                            clean_link = link.lower()
+                            if clean_link == url.lower() or clean_link.strip("/") == url.lower().strip("/"):
+                                return 1000  # Root URL gets top priority
+                            
+                            score = 10
+                            for noise in noise_keywords:
+                                if noise in clean_link:
+                                    return -100  # Filter out legal/auth noise
+                            
+                            for kw in priority_keywords:
+                                if kw in clean_link:
+                                    score += 50
+                            
+                            # Prefer clean short paths (/about-us) over deep nested links (/blog/2024/01/item)
+                            path_depth = len([p for p in clean_link.replace(url.lower(), "").split("/") if p])
+                            score -= (path_depth * 5)
+                            return score
 
-                if not markdown:
-                    return None
+                        # Filter and sort mapped URLs by priority score
+                        valid_links = [l for l in mapped_links if l and score_url(l) > 0]
+                        valid_links.sort(key=score_url, reverse=True)
 
-                # Parse markdown headings into sections
-                sections: List[URLSection] = []
-                blocks = re.split(r"\n(?=#+\s)", markdown)
-                for block in blocks:
-                    block = block.strip()
-                    if not block:
+                        for link in valid_links:
+                            if link not in target_urls and len(target_urls) < 5:
+                                target_urls.append(link)
+                except Exception as map_err:
+                    print(f"Firecrawl map notice: {map_err}")
+
+                all_sections: List[URLSection] = []
+                main_title = url
+
+                for target_url in target_urls:
+                    resp = await client.post(
+                        "https://api.firecrawl.dev/v1/scrape",
+                        headers=headers,
+                        json={"url": target_url, "formats": ["markdown"]},
+                    )
+                    if resp.status_code != 200:
                         continue
-                    lines = block.split("\n", 1)
-                    heading = None
-                    if lines[0].startswith("#"):
-                        heading = re.sub(r"^#+\s*", "", lines[0]).strip()
-                        body = lines[1].strip() if len(lines) > 1 else ""
-                    else:
-                        body = block
 
-                    if body:
-                        sections.append(URLSection(text=body, heading=heading))
+                    raw_json = resp.json() or {}
+                    data = raw_json.get("data") or {}
+                    if not isinstance(data, dict):
+                        data = {}
 
-                if not sections and markdown:
-                    sections.append(URLSection(text=markdown[:8000], heading=title))
+                    markdown = (data.get("markdown") or "").strip()
+                    metadata = data.get("metadata") or {}
+                    if not isinstance(metadata, dict):
+                        metadata = {}
 
-                return URLExtractionResult(title=title, sections=sections)
+                    page_title = metadata.get("title") or target_url
+                    if target_url == url and page_title:
+                        main_title = page_title
+
+                    if not markdown:
+                        continue
+
+                    blocks = re.split(r"\n(?=#+\s)", markdown)
+                    for block in blocks:
+                        block = block.strip()
+                        if not block:
+                            continue
+                        lines = block.split("\n", 1)
+                        heading = None
+                        if lines[0].startswith("#"):
+                            heading = re.sub(r"^#+\s*", "", lines[0]).strip()
+                            body = lines[1].strip() if len(lines) > 1 else ""
+                        else:
+                            body = block
+
+                        if body:
+                            all_sections.append(URLSection(text=body, heading=heading or page_title))
+
+                if not all_sections:
+                    return None
+
+                return URLExtractionResult(title=main_title, sections=all_sections)
         except Exception as e:
             print(f"Firecrawl extraction notice: {e}")
             return None
