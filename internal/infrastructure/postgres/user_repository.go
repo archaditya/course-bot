@@ -81,17 +81,11 @@ func (r *UserRepository) UpdateStatus(ctx context.Context, userID string, isDisa
 func (r *UserRepository) ListUsersWithUsageStats(ctx context.Context) ([]*entities.UserUsageStat, error) {
 	const q = `
 		SELECT u.id, u.email, u.full_name, u.role, u.is_disabled, u.created_at,
-		       COUNT(DISTINCT c.id) AS conversation_count,
-		       COUNT(DISTINCT d.id) AS document_count,
-		       COUNT(DISTINCT m.id) AS message_count,
-		       COUNT(DISTINCT ch.id) AS chunk_count
+		       COALESCE((SELECT COUNT(*) FROM conversations c JOIN workspaces w ON w.id = c.workspace_id WHERE w.user_id = u.id), 0) AS conversation_count,
+		       COALESCE((SELECT COUNT(*) FROM documents d JOIN conversations c ON c.id = d.conversation_id JOIN workspaces w ON w.id = c.workspace_id WHERE w.user_id = u.id), 0) AS document_count,
+		       COALESCE((SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id JOIN workspaces w ON w.id = c.workspace_id WHERE w.user_id = u.id), 0) AS message_count,
+		       COALESCE((SELECT COUNT(*) FROM chunks ch JOIN conversations c ON c.id = ch.conversation_id JOIN workspaces w ON w.id = c.workspace_id WHERE w.user_id = u.id), 0) AS chunk_count
 		FROM users u
-		LEFT JOIN workspaces w ON w.user_id = u.id
-		LEFT JOIN conversations c ON c.workspace_id = w.id
-		LEFT JOIN documents d ON d.conversation_id = c.id
-		LEFT JOIN messages m ON m.conversation_id = c.id
-		LEFT JOIN chunks ch ON ch.conversation_id = c.id
-		GROUP BY u.id
 		ORDER BY u.created_at DESC`
 
 	rows, err := r.db.QueryContext(ctx, q)

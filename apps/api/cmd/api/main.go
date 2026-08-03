@@ -122,7 +122,7 @@ func main() {
 	}
 
 	statusHandler := httpapi.NewStatusHandler(documents, jobs)
-	adminHandler := httpapi.NewAdminHandler(users)
+	adminHandler := httpapi.NewAdminHandler(users, chatCache)
 	learningHandler := httpapi.NewLearningHandler(learningNodes, conversations, documents, chunks, aiClient, ids)
 
 	// ── HTTP wiring ────────────────────────────────────────────────────────
