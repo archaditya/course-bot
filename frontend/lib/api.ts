@@ -137,8 +137,10 @@ export interface ChunkDetail {
 	document_name?: string;
 	source_type?: string;
 	source_url?: string;
+	token_count?: number;
 }
 export async function apiGetChunk(chunkId: string): Promise<ChunkDetail> { return request(`/chunks/${chunkId}`, { auth: true }); }
+export async function apiListDocumentChunks(documentId: string): Promise<{ items: ChunkDetail[] }> { return request(`/documents/${documentId}/chunks`, { auth: true }); }
 export async function apiHealth(): Promise<{ status: string }> { return request('/healthz'); }
 
 // ── Learning Nodes (NotebookLM Study Tools) ──────────────────────────────────

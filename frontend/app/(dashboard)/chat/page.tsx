@@ -14,6 +14,7 @@ import {
   apiDeleteConversation,
   apiUpdateConversationTitle,
   apiListDocuments,
+  apiListDocumentChunks,
   apiUploadDocument,
   apiAddSource,
   apiDeleteDocument,
@@ -795,6 +796,185 @@ function primaryBtnStyle(disabled: boolean): React.CSSProperties {
     color: "var(--color-on-primary)", fontFamily: "var(--font-geist)", fontWeight: 600, fontSize: "13px",
     cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "flex", alignItems: "center", justifyContent: "center",
   };
+}
+
+function SourceGuideModal({ doc, onClose }: { doc: DocumentItem; onClose: () => void }) {
+  const [tab, setTab] = useState<"guide" | "chunks">("guide");
+  const [page, setPage] = useState(0);
+
+  const { data: chunksData, isLoading } = useQuery<{ items: ChunkDetail[] }>({
+    queryKey: ["document-chunks", doc.id],
+    queryFn: () => apiListDocumentChunks(doc.id),
+    enabled: tab === "chunks",
+  });
+
+  const chunks = chunksData?.items ?? [];
+  const pageSize = 3;
+  const totalPages = Math.max(1, Math.ceil(chunks.length / pageSize));
+  const currentChunks = chunks.slice(page * pageSize, (page + 1) * pageSize);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 110,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: "20px",
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: "680px", background: "var(--color-surface-container-low)",
+          border: "1px solid var(--color-outline-variant)", borderRadius: "var(--radius-xl)",
+          padding: "24px", boxShadow: "var(--shadow-lg)", maxHeight: "90vh", display: "flex", flexDirection: "column",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+          <div>
+            <span style={{ fontSize: "11px", fontFamily: "var(--font-geist)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--color-tertiary)" }}>
+              ✨ Source guide & Chunks
+            </span>
+            <h3 style={{ margin: "4px 0 0 0", fontFamily: "var(--font-geist)", fontSize: "17px", fontWeight: 700, color: "var(--color-on-surface)" }}>
+              {doc.original_filename}
+            </h3>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--color-on-surface-variant)", cursor: "pointer" }}>
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        {/* Tab Toggle */}
+        <div style={{ display: "flex", gap: "8px", borderBottom: "1px solid var(--color-outline-variant)", paddingBottom: "10px", marginBottom: "16px" }}>
+          <button
+            type="button"
+            onClick={() => setTab("guide")}
+            style={{
+              padding: "6px 14px", borderRadius: "var(--radius-md)", fontSize: "13px", fontWeight: 600,
+              fontFamily: "var(--font-geist)", border: "none", cursor: "pointer",
+              background: tab === "guide" ? "var(--color-primary-container)" : "transparent",
+              color: tab === "guide" ? "var(--color-on-primary-container)" : "var(--color-on-surface-variant)",
+            }}
+          >
+            📖 Overview & Guide
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("chunks")}
+            style={{
+              padding: "6px 14px", borderRadius: "var(--radius-md)", fontSize: "13px", fontWeight: 600,
+              fontFamily: "var(--font-geist)", border: "none", cursor: "pointer",
+              background: tab === "chunks" ? "var(--color-primary-container)" : "transparent",
+              color: tab === "chunks" ? "var(--color-on-primary-container)" : "var(--color-on-surface-variant)",
+            }}
+          >
+            🧩 Vector Chunks {chunks.length > 0 ? `(${chunks.length})` : ""}
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div style={{ flex: 1, overflowY: "auto", minHeight: "260px" }}>
+          {tab === "guide" ? (
+            <div style={{ background: "var(--color-surface-container-lowest)", padding: "18px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-outline-variant)" }}>
+              <p style={{ fontSize: "13.5px", lineHeight: 1.7, margin: 0, color: "var(--color-on-surface)", whiteSpace: "pre-wrap" }}>
+                {doc.ai_summary || doc.summary || "Generating AI Source Guide summary..."}
+              </p>
+            </div>
+          ) : (
+            <div>
+              {isLoading ? (
+                <div style={{ padding: "40px", textAlign: "center", color: "var(--color-on-surface-variant)", fontSize: "13px" }}>
+                  Loading vector chunks...
+                </div>
+              ) : chunks.length === 0 ? (
+                <div style={{ padding: "40px", textAlign: "center", color: "var(--color-on-surface-variant)", fontSize: "13px" }}>
+                  No vector chunks generated for this document yet.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", color: "var(--color-on-surface-variant)", fontWeight: 600 }}>
+                    <span>Showing Chunks {page * pageSize + 1} - {Math.min((page + 1) * pageSize, chunks.length)} of {chunks.length}</span>
+                    <span>Total Indexed: {chunks.length} chunks</span>
+                  </div>
+
+                  {currentChunks.map((chunk, idx) => (
+                    <div
+                      key={chunk.id}
+                      style={{
+                        padding: "14px", borderRadius: "var(--radius-md)",
+                        background: "var(--color-surface-container-lowest)",
+                        border: "1px solid var(--color-outline-variant)",
+                        display: "flex", flexDirection: "column", gap: "8px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", fontWeight: 700, color: "var(--color-tertiary)" }}>
+                        <span>CHUNK #{page * pageSize + idx + 1}</span>
+                        <span style={{ color: "var(--color-on-surface-variant)", fontWeight: 500 }}>
+                          Tokens: {chunk.token_count || "~" + Math.round((chunk.content?.length || 0) / 4)}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: "12.5px", lineHeight: 1.55, color: "var(--color-on-surface)", fontFamily: "var(--font-inter)", whiteSpace: "pre-wrap" }}>
+                        {chunk.content}
+                      </p>
+                    </div>
+                  ))}
+
+                  {/* Pagination Controls */}
+                  {totalPages > 1 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--color-outline-variant)" }}>
+                      <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        style={{
+                          padding: "6px 14px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-outline-variant)",
+                          background: page === 0 ? "transparent" : "var(--color-surface-container-high)",
+                          color: "var(--color-on-surface)", fontSize: "12px", fontWeight: 600, cursor: page === 0 ? "not-allowed" : "pointer", opacity: page === 0 ? 0.5 : 1,
+                        }}
+                      >
+                        ← Previous
+                      </button>
+                      <span style={{ fontSize: "12px", color: "var(--color-on-surface-variant)", fontWeight: 600 }}>
+                        Page {page + 1} of {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                        disabled={page >= totalPages - 1}
+                        style={{
+                          padding: "6px 14px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-outline-variant)",
+                          background: page >= totalPages - 1 ? "transparent" : "var(--color-surface-container-high)",
+                          color: "var(--color-on-surface)", fontSize: "12px", fontWeight: 600, cursor: page >= totalPages - 1 ? "not-allowed" : "pointer", opacity: page >= totalPages - 1 ? 0.5 : 1,
+                        }}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: "18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <StatusPill status={doc.status} />
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "8px 20px", borderRadius: "var(--radius-md)", background: "var(--color-primary)",
+              color: "var(--color-on-primary)", border: "none", fontFamily: "var(--font-geist)", fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            }}
+          >
+            Done
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
 }
 
 export default function ChatPage() {
@@ -1810,62 +1990,13 @@ export default function ChatPage() {
         )}
       </AnimatePresence>
 
-      {/* ── NotebookLM 1:1 Source Guide Modal ── */}
+      {/* ── NotebookLM 1:1 Source Guide Modal & Vector Chunks Inspector ── */}
       <AnimatePresence>
         {selectedDocSummary && (
-          <div
-            onClick={() => setSelectedDocSummary(null)}
-            style={{
-              position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 110,
-              display: "flex", alignItems: "center", justifyContent: "center", padding: "20px",
-            }}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: "100%", maxWidth: "620px", background: "var(--color-surface-container-low)",
-                border: "1px solid var(--color-outline-variant)", borderRadius: "var(--radius-xl)",
-                padding: "24px", boxShadow: "var(--shadow-lg)",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                <div>
-                  <span style={{ fontSize: "11px", fontFamily: "var(--font-geist)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--color-tertiary)" }}>
-                    ✨ Source guide
-                  </span>
-                  <h3 style={{ margin: "4px 0 0 0", fontFamily: "var(--font-geist)", fontSize: "17px", fontWeight: 700, color: "var(--color-on-surface)" }}>
-                    {selectedDocSummary.original_filename}
-                  </h3>
-                </div>
-                <button onClick={() => setSelectedDocSummary(null)} style={{ background: "none", border: "none", color: "var(--color-on-surface-variant)", cursor: "pointer" }}>
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
-
-              <div style={{ background: "var(--color-surface-container-lowest)", padding: "18px", borderRadius: "var(--radius-md)", border: "1px solid var(--color-outline-variant)", maxHeight: "360px", overflowY: "auto" }}>
-                <p style={{ fontSize: "13.5px", lineHeight: 1.7, margin: 0, color: "var(--color-on-surface)", whiteSpace: "pre-wrap" }}>
-                  {selectedDocSummary.ai_summary || selectedDocSummary.summary || "Generating AI Source Guide summary..."}
-                </p>
-              </div>
-
-              <div style={{ marginTop: "18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <StatusPill status={selectedDocSummary.status} />
-                <button
-                  type="button"
-                  onClick={() => setSelectedDocSummary(null)}
-                  style={{
-                    padding: "8px 20px", borderRadius: "var(--radius-md)", background: "var(--color-primary)",
-                    color: "var(--color-on-primary)", border: "none", fontFamily: "var(--font-geist)", fontWeight: 600, fontSize: "13px", cursor: "pointer",
-                  }}
-                >
-                  Done
-                </button>
-              </div>
-            </motion.div>
-          </div>
+          <SourceGuideModal
+            doc={selectedDocSummary}
+            onClose={() => setSelectedDocSummary(null)}
+          />
         )}
       </AnimatePresence>
     </div>
