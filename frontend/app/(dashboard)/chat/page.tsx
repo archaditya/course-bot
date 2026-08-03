@@ -45,7 +45,7 @@ function cleanFilename(name: string): string {
     .trim();
 }
 
-export function getSourceColor(sourceType?: string): { color: string; bg: string; border: string } {
+function getSourceColor(sourceType?: string): { color: string; bg: string; border: string } {
   switch (sourceType?.toLowerCase()) {
     case "pdf":
       return { color: "#EF4444", bg: "rgba(239, 68, 68, 0.12)", border: "rgba(239, 68, 68, 0.3)" };
