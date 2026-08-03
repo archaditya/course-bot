@@ -95,7 +95,8 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 
 	for token := range tokenCh {
 		if token.Text != "" {
-			fmt.Fprintf(w, "data: %s\n\n", token.Text)
+			payload, _ := json.Marshal(map[string]string{"text": token.Text})
+			fmt.Fprintf(w, "data: %s\n\n", string(payload))
 			flusher.Flush()
 		}
 		if token.Done {

@@ -472,6 +472,53 @@ func (c *Client) HydeDocument(ctx context.Context, query string) (string, error)
 	return resp.Document, nil
 }
 
+// ── 8. Learning Tool & Web Search Methods ─────────────────────────────────
+
+type learningToolRequest struct {
+	ToolType string `json:"tool_type"`
+	Content  string `json:"content"`
+	Title    string `json:"title,omitempty"`
+}
+
+type learningToolResponse struct {
+	Result json.RawMessage `json:"result"`
+}
+
+func (c *Client) GenerateLearningTool(ctx context.Context, toolType, content, title string) (json.RawMessage, error) {
+	var resp learningToolResponse
+	if err := c.postJSON(ctx, "/generate-learning-tool", learningToolRequest{
+		ToolType: toolType,
+		Content:  content,
+		Title:    title,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("llm: generate-learning-tool: %w", err)
+	}
+	return resp.Result, nil
+}
+
+type WebSearchItem struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
+}
+
+type WebSearchResult struct {
+	Answer  string          `json:"answer"`
+	Results []WebSearchItem `json:"results"`
+}
+
+type webSearchRequest struct {
+	Query string `json:"query"`
+}
+
+func (c *Client) WebSearch(ctx context.Context, query string) (*WebSearchResult, error) {
+	var resp WebSearchResult
+	if err := c.postJSON(ctx, "/web-search", webSearchRequest{Query: query}, &resp); err != nil {
+		return nil, fmt.Errorf("llm: web-search: %w", err)
+	}
+	return &resp, nil
+}
+
 // ── Internal Helpers ──────────────────────────────────────────────────────
 
 func (c *Client) postJSON(ctx context.Context, path string, body, out any) error {
@@ -646,6 +693,43 @@ func (c *Client) ExtractURL(ctx context.Context, targetURL string, allowedDomain
 	}
 
 	return &resp, nil
+}
+
+// ── 8. Mem0 Memory Service Integration ────────────────────────────────────
+
+type memorySearchRequest struct {
+	WorkspaceID string `json:"workspace_id"`
+	Query       string `json:"query"`
+}
+
+type memorySearchResponse struct {
+	Memories []string `json:"memories"`
+}
+
+func (c *Client) SearchMemory(ctx context.Context, workspaceID string, query string) ([]string, error) {
+	var resp memorySearchResponse
+	reqBody := memorySearchRequest{WorkspaceID: workspaceID, Query: query}
+	err := c.callWithMetrics(ctx, c.generateCB, func() error {
+		return c.postJSON(ctx, "/memory/search", reqBody, &resp)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Memories, nil
+}
+
+type memoryAddRequest struct {
+	WorkspaceID   string `json:"workspace_id"`
+	UserText      string `json:"user_text"`
+	AssistantText string `json:"assistant_text"`
+}
+
+func (c *Client) AddMemory(ctx context.Context, workspaceID string, userText string, assistantText string) error {
+	reqBody := memoryAddRequest{WorkspaceID: workspaceID, UserText: userText, AssistantText: assistantText}
+	return c.callWithMetrics(ctx, c.generateCB, func() error {
+		var resp struct{}
+		return c.postJSON(ctx, "/memory/add", reqBody, &resp)
+	})
 }
 
 // isPrivateIP checks if a hostname is a private/internal IP address.

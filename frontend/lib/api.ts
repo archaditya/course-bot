@@ -141,17 +141,119 @@ export interface ChunkDetail {
 export async function apiGetChunk(chunkId: string): Promise<ChunkDetail> { return request(`/chunks/${chunkId}`, { auth: true }); }
 export async function apiHealth(): Promise<{ status: string }> { return request('/healthz'); }
 
+// ── Learning Nodes (NotebookLM Study Tools) ──────────────────────────────────
+export type ToolType = 'summary' | 'key_takeaways' | 'flashcards' | 'quiz' | 'mind_map' | 'ai_report';
+export type LearningNodeStatus = 'generating' | 'ready' | 'failed';
+
+export interface LearningNode {
+	id: string;
+	conversation_id: string;
+	tool_type: ToolType;
+	title: string;
+	content: any;
+	status: LearningNodeStatus;
+	created_at: string;
+	updated_at: string;
+}
+
+export async function apiCreateLearningNode(conversationId: string, toolType: ToolType, title?: string): Promise<LearningNode> {
+	return request(`/conversations/${conversationId}/learning-nodes`, { method: 'POST', body: { tool_type: toolType, title }, auth: true });
+}
+
+export async function apiListLearningNodes(conversationId: string): Promise<{ items: LearningNode[] }> {
+	return request(`/conversations/${conversationId}/learning-nodes`, { auth: true });
+}
+
+export async function apiDeleteLearningNode(conversationId: string, nodeId: string): Promise<void> {
+	return request(`/conversations/${conversationId}/learning-nodes/${nodeId}`, { method: 'DELETE', auth: true });
+}
+
 type Options = { method?: string; body?: unknown; auth?: boolean; retry?: boolean };
 let refreshInFlight: Promise<void> | null = null;
-async function refreshSession() { if (!refreshInFlight) refreshInFlight = (async () => { const refresh = typeof window === 'undefined' ? null : localStorage.getItem('refresh_token'); if (!refresh) throw new ApiError('Your session has expired.', 401); const tokens = await apiRefresh(refresh); setTokens(tokens); })().finally(() => { refreshInFlight = null; }); return refreshInFlight; }
-async function request<T>(path: string, options: Options = {}): Promise<T> {
-	const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }; const token = options.auth ? getToken() : null; if (token) headers.Authorization = `Bearer ${token}`;
-	const response = await fetch(`${BASE}${path}`, { method: options.method ?? 'GET', headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
-	if (response.status === 401 && options.auth && options.retry !== false) { try { await refreshSession(); return request(path, { ...options, retry: false }); } catch { clearTokens(); } }
-	if (!response.ok) { const payload = await response.text(); throw toApiError(response.status, payload); }
-	if (response.status === 204) return undefined as T; return response.json() as Promise<T>;
+async function refreshSession() {
+	if (!refreshInFlight) {
+		refreshInFlight = (async () => {
+			const refresh = typeof window === 'undefined' ? null : localStorage.getItem('refresh_token');
+			if (!refresh) throw new ApiError('Your session has expired.', 401);
+			const tokens = await apiRefresh(refresh);
+			setTokens(tokens);
+		})().finally(() => {
+			refreshInFlight = null;
+		});
+	}
+	return refreshInFlight;
 }
-function toApiError(status: number, payload: string) { try { const data = JSON.parse(payload); return new ApiError(data?.error?.message ?? `Request failed (${status})`, status, data?.error?.code); } catch { return new ApiError(`Request failed (${status})`, status); } }
-export function getToken(): string | null { return typeof window === 'undefined' ? null : localStorage.getItem('access_token'); }
-export function setTokens(tokens: Pick<AuthTokens, 'access_token' | 'refresh_token'>): void { localStorage.setItem('access_token', tokens.access_token); localStorage.setItem('refresh_token', tokens.refresh_token); }
-export function clearTokens(): void { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); }
+
+async function request<T>(path: string, options: Options = {}): Promise<T> {
+	const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
+	const token = options.auth ? getToken() : null;
+	if (token) headers.Authorization = `Bearer ${token}`;
+
+	const response = await fetch(`${BASE}${path}`, {
+		method: options.method ?? 'GET',
+		headers,
+		body: options.body === undefined ? undefined : JSON.stringify(options.body),
+	});
+
+	if (response.status === 401 && options.auth && options.retry !== false) {
+		try {
+			await refreshSession();
+			return request(path, { ...options, retry: false });
+		} catch (refreshErr) {
+			clearTokens();
+			throw refreshErr;
+		}
+	}
+
+	if (!response.ok) {
+		const payload = await response.text();
+		throw toApiError(response.status, payload);
+	}
+
+	if (response.status === 204) return undefined as T;
+	return response.json() as Promise<T>;
+}
+
+function toApiError(status: number, payload: string) {
+	try {
+		const data = JSON.parse(payload);
+		return new ApiError(data?.error?.message ?? `Request failed (${status})`, status, data?.error?.code);
+	} catch {
+		return new ApiError(`Request failed (${status})`, status);
+	}
+}
+
+export function getToken(): string | null {
+	return typeof window === 'undefined' ? null : localStorage.getItem('access_token');
+}
+
+export function getStoredUser(): User | null {
+	if (typeof window === 'undefined') return null;
+	const raw = localStorage.getItem('auth_user');
+	if (!raw) return null;
+	try {
+		return JSON.parse(raw);
+	} catch {
+		return null;
+	}
+}
+
+export function setStoredUser(user: User): void {
+	if (typeof window !== 'undefined') {
+		localStorage.setItem('auth_user', JSON.stringify(user));
+	}
+}
+
+export function setTokens(tokens: Pick<AuthTokens, 'access_token' | 'refresh_token'>, user?: User): void {
+	localStorage.setItem('access_token', tokens.access_token);
+	localStorage.setItem('refresh_token', tokens.refresh_token);
+	if (user) {
+		localStorage.setItem('auth_user', JSON.stringify(user));
+	}
+}
+
+export function clearTokens(): void {
+	localStorage.removeItem('access_token');
+	localStorage.removeItem('refresh_token');
+	localStorage.removeItem('auth_user');
+}

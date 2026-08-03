@@ -63,8 +63,17 @@ hyde_service = HydeService(llm_provider)
 pdf_extractor = PDFExtractorService()
 url_extractor = URLExtractorService()
 
+from app.learning_tool.service import LearningToolService
+from app.web_search.service import WebSearchService
+from api.schemas import (
+    LearningToolRequest, LearningToolResponse,
+    WebSearchRequest, WebSearchResponse, WebSearchItemSchema,
+)
+
 intent_classifier = IntentClassifierService(llm_provider)
 memory_service = WorkspaceMemoryService()
+learning_tool_service = LearningToolService(llm_provider)
+web_search_service = WebSearchService()
 
 qdrant = QdrantClient()
 bm25 = BM25Retriever()
@@ -322,5 +331,33 @@ async def add_memory(request: MemoryAddRequest):
     try:
         facts = await memory_service.add_memory(request.workspace_id, request.user_text, request.assistant_text)
         return MemoryAddResponse(added_facts=facts)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate-learning-tool", response_model=LearningToolResponse)
+async def generate_learning_tool(request: LearningToolRequest):
+    """Generate study tools (flashcards, quiz, summary, mind map, etc.)."""
+    try:
+        result = await learning_tool_service.generate(
+            tool_type=request.tool_type,
+            content=request.content,
+            title=request.title or "",
+        )
+        return LearningToolResponse(result=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/web-search", response_model=WebSearchResponse)
+async def web_search(request: WebSearchRequest):
+    """Perform real-time web search via Tavily."""
+    try:
+        res = await web_search_service.search(request.query)
+        return WebSearchResponse(
+            answer=res.answer,
+            results=[
+                WebSearchItemSchema(title=item.title, url=item.url, content=item.content)
+                for item in res.results
+            ],
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

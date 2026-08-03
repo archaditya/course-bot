@@ -123,6 +123,59 @@ class URLExtractorService:
 
         return URLExtractionResult(title=title, sections=sections)
 
+    async def _extract_firecrawl(self, url: str) -> URLExtractionResult | None:
+        """Extracts JS-rendered web content using Firecrawl API."""
+        firecrawl_key = getattr(settings, "firecrawl_api_key", None) or getattr(settings, "FIRECRAWL_API_KEY", None)
+        if not firecrawl_key:
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                resp = await client.post(
+                    "https://api.firecrawl.dev/v1/scrape",
+                    headers={
+                        "Authorization": f"Bearer {firecrawl_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"url": url, "formats": ["markdown"]},
+                )
+                if resp.status_code != 200:
+                    print(f"Firecrawl status {resp.status_code}: {resp.text[:200]}")
+                    return None
+
+                data = resp.json().get("data", {})
+                markdown = data.get("markdown", "").strip()
+                title = data.get("metadata", {}).get("title") or url
+
+                if not markdown:
+                    return None
+
+                # Parse markdown headings into sections
+                sections: List[URLSection] = []
+                blocks = re.split(r"\n(?=#+\s)", markdown)
+                for block in blocks:
+                    block = block.strip()
+                    if not block:
+                        continue
+                    lines = block.split("\n", 1)
+                    heading = None
+                    if lines[0].startswith("#"):
+                        heading = re.sub(r"^#+\s*", "", lines[0]).strip()
+                        body = lines[1].strip() if len(lines) > 1 else ""
+                    else:
+                        body = block
+
+                    if body:
+                        sections.append(URLSection(text=body, heading=heading))
+
+                if not sections and markdown:
+                    sections.append(URLSection(text=markdown[:8000], heading=title))
+
+                return URLExtractionResult(title=title, sections=sections)
+        except Exception as e:
+            print(f"Firecrawl extraction notice: {e}")
+            return None
+
     async def extract(self, url: str) -> URLExtractionResult:
         # Check if URL is a YouTube Video
         yt_id = self._extract_youtube_id(url)
@@ -131,7 +184,12 @@ class URLExtractorService:
             if yt_result.sections:
                 return yt_result
 
-        # Standard Web Page Scraper Fallback
+        # 1. Try Firecrawl Premium Web Scraper first (if API key available)
+        firecrawl_res = await self._extract_firecrawl(url)
+        if firecrawl_res and firecrawl_res.sections:
+            return firecrawl_res
+
+        # 2. Standard Web Page Scraper Fallback (httpx + BeautifulSoup)
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.get(url, headers={"User-Agent": "archadiLM/1.0 (course-material-indexer)"})
             response.raise_for_status()

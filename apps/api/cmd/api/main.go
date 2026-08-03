@@ -98,6 +98,7 @@ func main() {
 	messages := postgres.NewMessageRepository(db)
 	citations := postgres.NewCitationRepository(db)
 	chunks := postgres.NewChunkRepository(db)
+	learningNodes := postgres.NewLearningNodeRepository(db)
 
 	// ── Application services ───────────────────────────────────────────────
 	authService := authapp.NewService(users, workspaces, refreshTokens, cfg.Auth.JWTSigningKey)
@@ -122,15 +123,17 @@ func main() {
 
 	statusHandler := httpapi.NewStatusHandler(documents, jobs)
 	adminHandler := httpapi.NewAdminHandler(users)
+	learningHandler := httpapi.NewLearningHandler(learningNodes, conversations, documents, chunks, aiClient, ids)
 
 	// ── HTTP wiring ────────────────────────────────────────────────────────
 	deps := httpapi.Dependencies{
-		JWTSigningKey: cfg.Auth.JWTSigningKey,
-		AuthHandler:   httpapi.NewAuthHandler(authService),
-		UploadHandler: httpapi.NewUploadHandler(uploadService, documents, chunks, chatCache),
-		ChatHandler:   httpapi.NewChatHandler(chatService),
-		StatusHandler: statusHandler,
-		AdminHandler:  adminHandler,
+		JWTSigningKey:   cfg.Auth.JWTSigningKey,
+		AuthHandler:     httpapi.NewAuthHandler(authService),
+		UploadHandler:   httpapi.NewUploadHandler(uploadService, documents, chunks, chatCache),
+		ChatHandler:     httpapi.NewChatHandler(chatService),
+		StatusHandler:   statusHandler,
+		AdminHandler:    adminHandler,
+		LearningHandler: learningHandler,
 
 		// Add health check dependencies
 		RedisClient: queue,

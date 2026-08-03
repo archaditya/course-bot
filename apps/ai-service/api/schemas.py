@@ -172,3 +172,25 @@ class MemoryAddRequest(BaseModel):
 
 class MemoryAddResponse(BaseModel):
     added_facts: List[str]
+
+# ── Learning Tools & Web Search ──────────────────────────────────────────
+
+class LearningToolRequest(BaseModel):
+    tool_type: str
+    content: str
+    title: Optional[str] = ""
+
+class LearningToolResponse(BaseModel):
+    result: dict | list
+
+class WebSearchRequest(BaseModel):
+    query: str
+
+class WebSearchItemSchema(BaseModel):
+    title: str
+    url: str
+    content: str
+
+class WebSearchResponse(BaseModel):
+    answer: str
+    results: List[WebSearchItemSchema]

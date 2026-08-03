@@ -14,6 +14,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"archadilm/internal/domain/entities"
@@ -134,3 +135,12 @@ type LessonRepository interface {
 	Create(ctx context.Context, l *entities.Lesson) error
 	ListByCourse(ctx context.Context, courseID string) ([]*entities.Lesson, error)
 }
+
+type LearningNodeRepository interface {
+	Create(ctx context.Context, node *entities.LearningNode) error
+	ListByConversation(ctx context.Context, conversationID string) ([]*entities.LearningNode, error)
+	GetByID(ctx context.Context, id string) (*entities.LearningNode, error)
+	UpdateContent(ctx context.Context, id string, content json.RawMessage, status string) error
+	Delete(ctx context.Context, id string) error
+}
+
