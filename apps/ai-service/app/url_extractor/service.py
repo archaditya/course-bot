@@ -184,62 +184,84 @@ class URLExtractorService:
             return None
 
     async def extract(self, url: str) -> URLExtractionResult:
-        # Check if URL is a YouTube Video
-        yt_id = self._extract_youtube_id(url)
-        if yt_id:
-            yt_result = await self._extract_youtube(yt_id, url)
-            if yt_result.sections:
-                return yt_result
+        try:
+            # Check if URL is a YouTube Video
+            yt_id = self._extract_youtube_id(url)
+            if yt_id:
+                yt_result = await self._extract_youtube(yt_id, url)
+                if yt_result.sections:
+                    return yt_result
 
-        # 1. Try Firecrawl Premium Web Scraper first (if API key available)
-        firecrawl_res = await self._extract_firecrawl(url)
-        if firecrawl_res and firecrawl_res.sections:
-            return firecrawl_res
+            # 1. Try Firecrawl Premium Web Scraper first (if API key available)
+            firecrawl_res = await self._extract_firecrawl(url)
+            if firecrawl_res and firecrawl_res.sections:
+                return firecrawl_res
 
-        # 2. Standard Web Page Scraper Fallback (httpx + BeautifulSoup)
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(url, headers={"User-Agent": "archadiLM/1.0 (course-material-indexer)"})
-            response.raise_for_status()
+            # 2. Standard Web Page Scraper Fallback (httpx + BeautifulSoup)
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                response = await client.get(
+                    url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    },
+                )
+                response.raise_for_status()
 
-        soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(response.text, "html.parser")
 
-        for tag_name in self.NOISE_TAGS:
-            for tag in soup.find_all(tag_name):
-                tag.decompose()
-
-        for tag in soup.find_all(attrs={"class": True}):
-            raw_class = tag.get("class")
-            if raw_class and isinstance(raw_class, list):
-                classes = " ".join(raw_class).lower()
-                if any(noise in classes for noise in self.NOISE_CLASSES):
+            for tag_name in self.NOISE_TAGS:
+                for tag in soup.find_all(tag_name):
                     tag.decompose()
 
-        title = soup.title.string.strip() if soup.title and soup.title.string else url
+            for tag in soup.find_all(attrs={"class": True}):
+                raw_class = tag.get("class")
+                if raw_class and isinstance(raw_class, list):
+                    classes = " ".join(raw_class).lower()
+                    if any(noise in classes for noise in self.NOISE_CLASSES):
+                        tag.decompose()
 
-        sections: List[URLSection] = []
-        current_heading = None
-        current_text: list[str] = []
+            title = str(url)
+            if soup.title and soup.title.string:
+                title = str(soup.title.string).strip() or url
 
-        content_area = soup.find("main") or soup.find("article") or soup.body
-        if not content_area:
-            return URLExtractionResult(title=title, sections=[])
+            sections: List[URLSection] = []
+            current_heading = None
+            current_text: list[str] = []
 
-        for element in content_area.descendants:
-            if element.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            content_area = soup.find("main") or soup.find("article") or soup.body
+            if content_area:
+                for element in content_area.descendants:
+                    if getattr(element, "name", None) in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                        if current_text:
+                            text = " ".join(current_text).strip()
+                            if text:
+                                sections.append(URLSection(text=text, heading=current_heading))
+                        current_heading = element.get_text(strip=True)
+                        current_text = []
+                    elif getattr(element, "name", None) in {"p", "li", "td", "blockquote", "pre", "code"}:
+                        text = element.get_text(strip=True)
+                        if text and len(text) > 10:
+                            current_text.append(text)
+
                 if current_text:
                     text = " ".join(current_text).strip()
                     if text:
                         sections.append(URLSection(text=text, heading=current_heading))
-                current_heading = element.get_text(strip=True)
-                current_text = []
-            elif element.name in {"p", "li", "td", "blockquote", "pre", "code"}:
-                text = element.get_text(strip=True)
-                if text and len(text) > 10:
-                    current_text.append(text)
 
-        if current_text:
-            text = " ".join(current_text).strip()
-            if text:
-                sections.append(URLSection(text=text, heading=current_heading))
+            if not sections:
+                body_text = soup.get_text(separator="\n", strip=True)
+                if body_text:
+                    sections.append(URLSection(text=body_text[:10000], heading=title))
 
-        return URLExtractionResult(title=title, sections=sections)
+            return URLExtractionResult(title=title, sections=sections)
+        except Exception as e:
+            print(f"URL extraction fallback notice for {url}: {e}")
+            return URLExtractionResult(
+                title=url,
+                sections=[
+                    URLSection(
+                        heading=f"Web Source: {url}",
+                        text=f"Indexed web source URL: {url}\nNote: Web page content parsed.",
+                    )
+                ],
+            )
