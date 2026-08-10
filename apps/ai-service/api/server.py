@@ -17,7 +17,7 @@ from api.schemas import (
     HydeDocumentRequest, HydeDocumentResponse,
 )
 
-from app.providers import get_embedding_provider, get_llm_provider, get_reranker_provider, get_guardrail_provider
+from app.providers import get_embedding_provider, get_llm_provider, get_smart_llm_provider, get_reranker_provider, get_guardrail_provider
 from app.embedding.service import EmbeddingService
 from app.title_generator.service import TitleGeneratorService
 from app.summary_generator.service import SourceIntelService
@@ -45,21 +45,24 @@ from api.schemas import (
 
 app = FastAPI(title="archadiLM AI Service", version="0.2.0")
 
-# Initialize services
+# Initialize providers — Model Tiering Strategy
+# fast_provider  (Groq llama-3.1-8b): classification, routing, query enhancement
+# smart_provider (OpenAI gpt-4o):      user-facing generation, evaluation, source intel
 embedding_provider = get_embedding_provider()
-llm_provider = get_llm_provider()
+fast_provider = get_llm_provider()
+smart_provider = get_smart_llm_provider()
 reranker_provider = get_reranker_provider()
 guardrail_provider = get_guardrail_provider()
 
 embedding_service = EmbeddingService(embedding_provider)
-title_generator = TitleGeneratorService(llm_provider)
-source_intel = SourceIntelService(llm_provider)
+title_generator = TitleGeneratorService(fast_provider)
+source_intel = SourceIntelService(smart_provider)
 reranker = RerankerService(reranker_provider)
-generator = GeneratorService(llm_provider)
-evaluator = EvaluatorService(llm_provider)
+generator = GeneratorService(smart_provider)
+evaluator = EvaluatorService(smart_provider)
 guardrails = GuardrailsService(guardrail_provider)
-query_enhancer = QueryEnhancerService(llm_provider)
-hyde_service = HydeService(llm_provider)
+query_enhancer = QueryEnhancerService(fast_provider)
+hyde_service = HydeService(fast_provider)
 pdf_extractor = PDFExtractorService()
 url_extractor = URLExtractorService()
 
@@ -70,9 +73,9 @@ from api.schemas import (
     WebSearchRequest, WebSearchResponse, WebSearchItemSchema,
 )
 
-intent_classifier = IntentClassifierService(llm_provider)
+intent_classifier = IntentClassifierService(fast_provider)
 memory_service = WorkspaceMemoryService()
-learning_tool_service = LearningToolService(llm_provider)
+learning_tool_service = LearningToolService(smart_provider)
 web_search_service = WebSearchService()
 
 qdrant = QdrantClient()
