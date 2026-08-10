@@ -22,8 +22,14 @@ from config.settings import settings
 
 
 def get_llm_provider() -> LLMProvider:
+    """Fast provider (Groq) for classification, routing, and lightweight tasks."""
     if settings.groq_api_key:
         return GroqLLM()
+    return OpenAILLM()
+
+
+def get_smart_llm_provider() -> LLMProvider:
+    """Quality provider (OpenAI) for user-facing generation, evaluation, and source intelligence."""
     return OpenAILLM()
 
 

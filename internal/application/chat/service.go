@@ -180,17 +180,33 @@ func (s *Service) Send(
 
 		// KNOWLEDGE / MEMORY ROUTE: Execute full RAG pipeline
 
-		// ── Step 1: Guardrails ───────────────────────────────────────────────
-		injResult, err := s.guardrails.CheckInjection(ctx, userContent)
-		if err != nil {
-			log.Printf("chat: injection check: %v", err)
+		// ── Step 1: Guardrails (concurrent) ─────────────────────────────────
+		var (
+			guardWg             sync.WaitGroup
+			injResult           provider.InjectionResult
+			piiResult           provider.PIIResult
+			errInj, errPII      error
+		)
+
+		guardWg.Add(2)
+		go func() {
+			defer guardWg.Done()
+			injResult, errInj = s.guardrails.CheckInjection(ctx, userContent)
+		}()
+		go func() {
+			defer guardWg.Done()
+			piiResult, errPII = s.guardrails.CheckPII(ctx, userContent)
+		}()
+		guardWg.Wait()
+
+		if errInj != nil {
+			log.Printf("chat: injection check: %v", errInj)
 		} else if injResult.IsInjection {
 			return nil, fmt.Errorf("chat: query rejected: prompt injection detected")
 		}
 
-		piiResult, err := s.guardrails.CheckPII(ctx, userContent)
-		if err != nil {
-			log.Printf("chat: pii check: %v", err)
+		if errPII != nil {
+			log.Printf("chat: pii check: %v", errPII)
 		} else if piiResult.ContainsPII {
 			return nil, fmt.Errorf("chat: query rejected: PII detected in input")
 		}
