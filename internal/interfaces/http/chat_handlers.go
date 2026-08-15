@@ -4,8 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"unicode/utf8"
 
 	"archadilm/internal/application/chat"
+)
+
+const (
+	MaxChatPayloadBytes = 1 << 20 // 1 MB max request body
+	MaxChatMessageRunes = 4000   // 4,000 characters max per user message
 )
 
 type ChatHandler struct {
@@ -61,9 +67,25 @@ func (h *ChatHandler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Missing access token.")
 		return
 	}
+
+	// 1. Cap raw HTTP body size to prevent memory exhaustion DoS
+	r.Body = http.MaxBytesReader(w, r.Body, MaxChatPayloadBytes)
+
 	var req sendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Content == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "content is required.")
+		return
+	}
+
+	// 2. Validate input bounds
+	contentLength := utf8.RuneCountInString(req.Content)
+	if contentLength == 0 {
+		WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "content is required.")
+		return
+	}
+	if contentLength > MaxChatMessageRunes {
+		WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", 
+			fmt.Sprintf("content exceeds maximum length of %d characters.", MaxChatMessageRunes))
 		return
 	}
 

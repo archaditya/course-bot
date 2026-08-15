@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"archadilm/internal/domain/entities"
 	"archadilm/internal/domain/provider"
@@ -15,6 +16,8 @@ import (
 	"archadilm/internal/infrastructure/llm"
 	rediscache "archadilm/internal/infrastructure/redis"
 )
+
+const MaxUserMessageLength = 4000
 
 // Service owns the chat (query pipeline) use case. Retrieval is always
 // scoped to one conversation's own documents — there is no broader scope to
@@ -105,6 +108,13 @@ func (s *Service) Send(
 	tokenCh chan<- StreamToken,
 ) (*MessageResult, error) {
 	startTime := time.Now()
+
+	if strings.TrimSpace(userContent) == "" {
+		return nil, fmt.Errorf("chat: user content cannot be empty")
+	}
+	if utf8.RuneCountInString(userContent) > MaxUserMessageLength {
+		return nil, fmt.Errorf("chat: user content exceeds limit of %d characters", MaxUserMessageLength)
+	}
 
 	// Verify conversation exists and belongs to workspace
 	if _, err := s.conversations.GetByID(ctx, ws, conversationID); err != nil {
