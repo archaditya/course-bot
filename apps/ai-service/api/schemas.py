@@ -1,9 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
+
+# ── Max String Length Constants ──────────────────────────────────────────
+MAX_SHORT_TEXT = 4000      # Queries, chat inputs, guardrail checks
+MAX_MEDIUM_TEXT = 50000    # Individual document chunks or section text
+MAX_LONG_TEXT = 200000     # Full document contents for intel / summarization
 
 
 class EmbeddingRequest(BaseModel):
-    texts: List[str]
+    texts: List[str] = Field(..., min_items=1, max_items=128, description="List of texts to embed")
 
 
 class EmbeddingResponse(BaseModel):
@@ -12,7 +17,7 @@ class EmbeddingResponse(BaseModel):
 
 
 class TitleGenerationRequest(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=MAX_MEDIUM_TEXT)
     prompt_version: Optional[str] = "1.0"
 
 
@@ -21,7 +26,7 @@ class TitleGenerationResponse(BaseModel):
 
 
 class SummaryGenerationRequest(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=MAX_LONG_TEXT)
     prompt_version: Optional[str] = "1.0"
 
 
@@ -30,8 +35,8 @@ class SummaryGenerationResponse(BaseModel):
 
 
 class SourceIntelRequest(BaseModel):
-    content: str
-    filename: str
+    content: str = Field(..., min_length=1, max_length=MAX_LONG_TEXT)
+    filename: str = Field(..., min_length=1, max_length=255)
     prompt_version: Optional[str] = "1.0"
 
 
@@ -71,8 +76,8 @@ class RerankResponse(BaseModel):
 
 
 class GenerationRequest(BaseModel):
-    query: str
-    context: str
+    query: str = Field(..., min_length=1, max_length=MAX_SHORT_TEXT)
+    context: str = Field(..., max_length=MAX_MEDIUM_TEXT)
     prompt_version: Optional[str] = "1.0"
 
 
@@ -81,9 +86,9 @@ class GenerationResponse(BaseModel):
 
 
 class EvaluationRequest(BaseModel):
-    query: str
-    response: str
-    context: str
+    query: str = Field(..., min_length=1, max_length=MAX_SHORT_TEXT)
+    response: str = Field(..., min_length=1, max_length=MAX_MEDIUM_TEXT)
+    context: str = Field(..., max_length=MAX_MEDIUM_TEXT)
     prompt_version: Optional[str] = "1.0"
 
 
@@ -93,7 +98,7 @@ class EvaluationResponse(BaseModel):
 
 
 class GuardrailCheckRequest(BaseModel):
-    text: str
+    text: str = Field(..., min_length=1, max_length=MAX_SHORT_TEXT, description="User text to check against guardrails")
 
 
 class GuardrailCheckResponse(BaseModel):
@@ -103,7 +108,7 @@ class GuardrailCheckResponse(BaseModel):
 # ── Query Enhancement ─────────────────────────────────────────────────────
 
 class QueryEnhancementRequest(BaseModel):
-    query: str
+    query: str = Field(..., min_length=1, max_length=MAX_SHORT_TEXT)
     prompt_version: Optional[str] = "1.0"
 
 
