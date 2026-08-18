@@ -76,8 +76,8 @@ class RerankResponse(BaseModel):
 
 
 class GenerationRequest(BaseModel):
-    query: str = Field(..., min_length=1, max_length=MAX_SHORT_TEXT)
-    context: str = Field(..., max_length=MAX_MEDIUM_TEXT)
+    query: str
+    context: Optional[str] = ""
     prompt_version: Optional[str] = "1.0"
 
 

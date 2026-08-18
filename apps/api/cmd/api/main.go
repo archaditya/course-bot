@@ -114,7 +114,7 @@ func main() {
 	var chatService *chatapp.Service
 	if vectors != nil {
 		chatService = chatapp.NewService(
-			conversations, messages, citations, chunks,
+			conversations, documents, messages, citations, chunks,
 			aiClient, vectors, aiClient,
 			cfg.Flags.MaxEvaluatorRetries, ids,
 			chatCache,

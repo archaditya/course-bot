@@ -24,6 +24,7 @@ const MaxUserMessageLength = 4000
 // accidentally search across.
 type Service struct {
 	conversations repository.ConversationRepository
+	documents     repository.DocumentRepository
 	messages      repository.MessageRepository
 	citations     repository.CitationRepository
 	chunks        repository.ChunkRepository
@@ -39,6 +40,7 @@ type Service struct {
 
 func NewService(
 	conversations repository.ConversationRepository,
+	documents repository.DocumentRepository,
 	messages repository.MessageRepository,
 	citations repository.CitationRepository,
 	chunks repository.ChunkRepository,
@@ -51,6 +53,7 @@ func NewService(
 ) *Service {
 	return &Service{
 		conversations: conversations,
+		documents:     documents,
 		messages:      messages,
 		citations:     citations,
 		chunks:        chunks,
@@ -147,9 +150,45 @@ func (s *Service) Send(
 	var ltmMemories []string
 	usedVector := false
 
+	// ── Summary Fast-Path: Use pre-generated AI summary from indexing ────
+	// Detects broad summary/overview requests and serves the pre-computed
+	// Document.AISummary + Document.AIOverview instantly, skipping the heavy
+	// RAG pipeline (guardrails, HyDE, vector search, etc.)
+	isSummaryRoute := strings.Contains(cleanInput, "summary") ||
+		strings.Contains(cleanInput, "summarize") ||
+		strings.Contains(cleanInput, "summarise") ||
+		strings.Contains(cleanInput, "overview") ||
+		strings.Contains(cleanInput, "what is this about") ||
+		strings.Contains(cleanInput, "what is this video") ||
+		strings.Contains(cleanInput, "what is this document")
+
+	if isSummaryRoute && s.documents != nil {
+		docs, err := s.documents.ListByConversation(ctx, string(ws), conversationID)
+		if err == nil && len(docs) > 0 {
+			var summaryBuilder strings.Builder
+			for _, d := range docs {
+				if d.AISummary != "" || d.AIOverview != "" {
+					fmt.Fprintf(&summaryBuilder, "## Source: %s\n\n", d.OriginalFilename)
+					if d.AIOverview != "" {
+						fmt.Fprintf(&summaryBuilder, "%s\n\n", d.AIOverview)
+					}
+					if d.AISummary != "" {
+						fmt.Fprintf(&summaryBuilder, "### Detailed Summary\n%s\n\n", d.AISummary)
+					}
+				}
+			}
+			if summaryBuilder.Len() > 0 {
+				context_ = summaryBuilder.String()
+				log.Printf("chat: SUMMARY FAST-PATH for conversation=%s (%d docs)", conversationID, len(docs))
+			}
+		}
+	}
+
 	if isFastRoute {
 		// FAST-PATH ROUTE: Skip Guardrails, HyDE & Qdrant Search (<200ms TTFT)
 		context_ = "User is engaging in casual greeting or smalltalk. Respond warmly and concisely."
+	} else if context_ != "" {
+		// Summary fast-path already populated context_ above — skip full RAG
 	} else {
 		// ── Cache Hit Path: serve cached response instantly ────────────────
 		if s.cache != nil {
@@ -297,12 +336,20 @@ func (s *Service) Send(
 				log.Printf("chat: vector search error: %v", sr.err)
 				continue
 			}
-			// Relevance thresholding: filter out low-similarity chunks (< 0.35 cosine similarity)
+			// Relevance thresholding: take matching chunks (fallback to raw top results if score filter is too strict)
 			var relevant []provider.VectorSearchResult
 			for _, r := range sr.results {
-				if r.Score >= 0.35 {
+				if r.Score >= 0.25 {
 					relevant = append(relevant, r)
 				}
+			}
+			if len(relevant) == 0 && len(sr.results) > 0 {
+				// Fallback to top-3 chunks for broad queries like "summarize video"
+				limit := 3
+				if len(sr.results) < limit {
+					limit = len(sr.results)
+				}
+				relevant = append(relevant, sr.results[:limit]...)
 			}
 			if len(relevant) > 0 {
 				allResultSets = append(allResultSets, relevant)
@@ -313,78 +360,8 @@ func (s *Service) Send(
 		mergedResults := reciprocalRankFusion(allResultSets, 20)
 
 		if len(mergedResults) == 0 {
-			// Fallback: Try live web search via Tavily if configured
-			webRes, err := s.aiClient.WebSearch(ctx, userContent)
-			if err == nil && webRes != nil && len(webRes.Results) > 0 {
-				log.Printf("chat: RAG returned 0 results, falling back to TAVILY WEB SEARCH")
-				var webContext strings.Builder
-				webContext.WriteString("🌐 Live Web Search Results:\n\n")
-				for i, res := range webRes.Results {
-					fmt.Fprintf(&webContext, "--- Web Result %d: %s (%s) ---\n%s\n\n", i+1, res.Title, res.URL, res.Content)
-				}
-				context_ = webContext.String()
-
-				// Build web citations
-				var webCitations []CitationResult
-				for _, res := range webRes.Results {
-					webCitations = append(webCitations, CitationResult{
-						ChunkID:    "web-" + s.ids.New(),
-						DocumentID: res.URL,
-						Title:      fmt.Sprintf("🌐 %s", res.Title),
-					})
-				}
-
-				// Generate answer with web context
-				prompt := provider.Prompt{
-					System: `You are a knowledgeable study partner. The user asked a question not found in their uploaded documents, so live web search results were retrieved.
-
-FORMATTING INSTRUCTIONS:
-1. State clearly at the top in 1 sentence that this answer comes from live web search.
-2. Use clean markdown: double newlines between paragraphs, ## Headings, and - bullet points.
-3. Put proper spaces after punctuation and headings (never smash heading titles directly into text).
-4. Do NOT output raw URLs in the text response — web citations are automatically rendered by the interface.`,
-					Messages: []provider.PromptMessage{
-						{Role: "user", Content: fmt.Sprintf("%s\n\nUser question: %s", context_, userContent)},
-					},
-					PromptVersion: "1.0",
-				}
-
-				tokenStream, err := s.aiClient.Stream(ctx, prompt)
-				if err == nil {
-					var webContent string
-					for token := range tokenStream {
-						webContent += token.Text
-						if !token.Done {
-							tokenCh <- StreamToken{Text: token.Text}
-						}
-					}
-					tokenCh <- StreamToken{Done: true}
-
-					assistantMsg := &entities.Message{
-						ID:             s.ids.New(),
-						ConversationID: conversationID,
-						Role:           entities.MessageRoleAssistant,
-						Content:        webContent,
-						Status:         entities.MessageStatusCompleted,
-					}
-					_ = s.messages.Create(ctx, assistantMsg)
-
-					return &MessageResult{
-						MessageID:  assistantMsg.ID,
-						Content:    webContent,
-						Citations:  webCitations,
-						Confidence: "web_search",
-					}, nil
-				}
-			}
-
-			noContent := "I couldn't find anything relevant to that question in this conversation's sources."
-			tokenCh <- StreamToken{Text: noContent, Done: true}
-			return &MessageResult{
-				MessageID:  s.ids.New(),
-				Content:    noContent,
-				Confidence: "normal",
-			}, nil
+			log.Printf("chat: Qdrant returned 0 relevant chunks for conversation=%s", conversationID)
+			context_ = "No relevant material was found in the uploaded sources for this question. The user may need to upload additional documents or ask a more specific question."
 		}
 
 		// ── Step 7: Fetch Chunk Content from Postgres ─────────────────────────
