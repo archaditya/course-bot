@@ -50,11 +50,10 @@ class WorkspaceMemoryService:
                     self.memory = None
 
     async def search_memory(self, workspace_id: str, query: str) -> List[str]:
-        """Search long-term memory scoped to workspace_id using Mem0."""
         if not self.memory:
             return []
         try:
-            results = self.memory.search(query=query, user_id=workspace_id)
+            results = self.memory.search(query=query, filters={"user_id": workspace_id})
             if isinstance(results, dict) and "results" in results:
                 return [m["memory"] for m in results["results"] if "memory" in m]
             elif isinstance(results, list):
@@ -64,17 +63,16 @@ class WorkspaceMemoryService:
             logger.error(f"Mem0 search error: {e}")
             return []
 
-    async def add_memory(self, workspace_id: str, user_text: str, assistant_text: str) -> bool:
-        """Extract and store facts using Mem0's automatic extraction pipeline."""
+    async def add_memory(self, workspace_id: str, user_text: str, assistant_text: str) -> List[str]:
         if not self.memory:
-            return False
+            return []
         try:
             messages = [
                 {"role": "user", "content": user_text},
                 {"role": "assistant", "content": assistant_text},
             ]
             self.memory.add(messages, user_id=workspace_id)
-            return True
+            return ["Memory added"]
         except Exception as e:
             logger.error(f"Mem0 add error: {e}")
-            return False
+            return []

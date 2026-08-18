@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     openai_llm_large_model: str = "gpt-4o"
     openai_llm_mini_model: str = "gpt-4o-mini"
 
-    # Groq API
+    # Groq API (Active models as of Aug 2026 — all Llama 3.x models decommissioned)
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
-    groq_llm_large_model: str = "llama-3.1-8b-instant"
-    groq_llm_fast_model: str = "llama-3.1-8b-instant"
+    groq_llm_large_model: str = os.getenv("GROQ_LLM_LARGE_MODEL", "openai/gpt-oss-20b")
+    groq_llm_fast_model: str = os.getenv("GROQ_LLM_FAST_MODEL", "openai/gpt-oss-20b")
     
     # Qdrant
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")

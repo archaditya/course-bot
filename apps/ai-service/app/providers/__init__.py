@@ -22,7 +22,7 @@ from config.settings import settings
 
 
 def get_llm_provider() -> LLMProvider:
-    """Fast provider (Groq) for classification, routing, and lightweight tasks."""
+    """Fast provider (Groq) for guardrails, query enhancement, HyDE, title gen."""
     if settings.groq_api_key:
         return GroqLLM()
     return OpenAILLM()
@@ -42,6 +42,7 @@ def get_reranker_provider() -> RerankerProvider:
 
 
 def get_guardrail_provider() -> GuardrailProvider:
+    """Fast guardrail checks (Groq) — PII, injection detection."""
     if settings.groq_api_key:
         return GroqGuardrail()
     return OpenAIGuardrail()
