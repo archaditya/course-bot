@@ -259,6 +259,7 @@ func (c *Client) Stream(ctx context.Context, prompt provider.Prompt) (<-chan pro
 				return
 			}
 			if strings.HasPrefix(text, "[ERROR:") {
+				log.Printf("llm: ai-service stream returned error: %s", text)
 				return
 			}
 			ch <- provider.Token{Text: text, Done: false}
