@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     evaluator_enabled: bool = True
     max_retries: int = 3
     evaluator_threshold: float = 7.0
+    mem0_telemetry: bool = os.getenv("MEM0_TELEMETRY", "false").lower() in ("true", "1", "yes")
     
     # Provider Selection
     llm_provider: Literal["openai"] = "openai"
@@ -55,5 +56,8 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+os.environ["MEM0_TELEMETRY"] = "true" if settings.mem0_telemetry else "false"
+
 if not settings.openai_api_key:
     print("⚠️ WARNING: OPENAI_API_KEY is not set in root .env!")
+
