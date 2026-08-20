@@ -1,7 +1,10 @@
+import os
 import logging
 from typing import List
 from config.settings import settings
 
+# Explicit safeguard before mem0 import
+os.environ["MEM0_TELEMETRY"] = "true" if settings.mem0_telemetry else "false"
 logger = logging.getLogger(__name__)
 
 try:
