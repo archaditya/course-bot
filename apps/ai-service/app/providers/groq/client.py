@@ -79,13 +79,15 @@ class GroqLLM(LLMProvider):
             full_preview = ""
 
             async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    txt = chunk.choices[0].delta.content
-                    full_preview += txt
-                    if not logged_preview and len(full_preview) >= 100:
-                        logger.info(f"⚡ Groq Stream Output Start: \"{full_preview[:100].replace(chr(10), ' ')}...\"")
-                        logged_preview = True
-                    yield Token(text=txt, done=False)
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        txt = delta.content
+                        full_preview += txt
+                        if not logged_preview and len(full_preview) >= 100:
+                            logger.info(f"⚡ Groq Stream Output Start: \"{full_preview[:100].replace(chr(10), ' ')}...\"")
+                            logged_preview = True
+                        yield Token(text=txt, done=False)
 
             yield Token(text="", done=True)
         except Exception as e:

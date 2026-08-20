@@ -3,6 +3,9 @@ from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator
 import json
 
+import logging
+logger = logging.getLogger("ai-service.server")
+
 from api.schemas import (
     EmbeddingRequest, EmbeddingResponse,
     TitleGenerationRequest, TitleGenerationResponse,
@@ -212,6 +215,7 @@ async def generate(request: GenerationRequest):
                 else:
                     yield token.text
         except Exception as e:
+            logger.error(f"❌ Error during /generate stream: {e}", exc_info=True)
             yield f"[ERROR: {str(e)}]"
     
     return StreamingResponse(
