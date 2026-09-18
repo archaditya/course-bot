@@ -18,6 +18,20 @@ export async function apiMe(): Promise<User> { return request('/auth/me', { auth
 export async function apiRefresh(refresh_token: string): Promise<Pick<AuthTokens, 'access_token' | 'refresh_token'>> { return request('/auth/refresh', { method: 'POST', body: { refresh_token } }); }
 
 // ── Admin Telemetry & Management ──────────────────────────────────────────────
+export interface AISystemTelemetry {
+	total_chat_requests: number;
+	fast_route_hits: number;
+	knowledge_route_hits: number;
+	avg_guardrail_latency_ms: number;
+	avg_enhance_latency_ms: number;
+	avg_memory_latency_ms: number;
+	avg_retrieval_latency_ms: number;
+	avg_generation_latency_ms: number;
+	avg_total_latency_ms: number;
+	ai_service_errors: number;
+	ai_service_healthy: boolean;
+}
+
 export interface SystemStats {
 	total_users: number;
 	active_users: number;
@@ -26,6 +40,7 @@ export interface SystemStats {
 	total_documents: number;
 	total_messages: number;
 	total_chunks: number;
+	ai_telemetry?: AISystemTelemetry;
 }
 
 export interface UserUsageStat {

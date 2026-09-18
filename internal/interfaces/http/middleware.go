@@ -2,9 +2,12 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	"archadilm/internal/infrastructure/observability"
 	"archadilm/internal/infrastructure/security"
 )
 
@@ -57,5 +60,18 @@ func RequireAdmin(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// TraceMiddleware assigns or propagates X-Trace-ID on every incoming request.
+func TraceMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceID := r.Header.Get(observability.TraceIDHeader)
+		if traceID == "" {
+			traceID = fmt.Sprintf("trc-%d", time.Now().UnixNano())
+		}
+		w.Header().Set(observability.TraceIDHeader, traceID)
+		ctx := observability.WithTraceID(r.Context(), traceID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

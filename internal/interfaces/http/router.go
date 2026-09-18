@@ -91,6 +91,17 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 		"ai_service_latency_ns":        observability.GlobalMetrics.AIServiceLatency.Load(),
 		"ai_service_errors":            observability.GlobalMetrics.AIServiceErrors.Load(),
 		"ai_service_calls":             observability.GlobalMetrics.AIServiceCalls.Load(),
+
+		// GenAI Chat pipeline metrics (Tier 2 Observability)
+		"chat_requests_total":             observability.GlobalMetrics.ChatRequestsTotal.Load(),
+		"chat_fast_route_hits":            observability.GlobalMetrics.ChatFastRouteHits.Load(),
+		"chat_knowledge_route_hits":       observability.GlobalMetrics.ChatKnowledgeRouteHits.Load(),
+		"chat_guardrail_duration_ns":      observability.GlobalMetrics.ChatGuardrailDurationNs.Load(),
+		"chat_query_enhance_duration_ns":  observability.GlobalMetrics.ChatQueryEnhanceDurationNs.Load(),
+		"chat_memory_search_duration_ns":  observability.GlobalMetrics.ChatMemorySearchDurationNs.Load(),
+		"chat_retrieval_duration_ns":      observability.GlobalMetrics.ChatRetrievalDurationNs.Load(),
+		"chat_generation_duration_ns":     observability.GlobalMetrics.ChatGenerationDurationNs.Load(),
+		"chat_total_latency_ns":           observability.GlobalMetrics.ChatTotalLatencyNs.Load(),
 	}
 
 	writeJSON(w, http.StatusOK, metrics)
@@ -133,7 +144,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	top.Handle("/chunks/", auth(rateLimited(protected)))        // ADD rateLimited
 	top.Handle("/admin/", auth(adminAuth(adminMux)))
 
-	return Recovery(SecurityHeaders(CORS(Logging(top))))
+	return Recovery(TraceMiddleware(SecurityHeaders(CORS(Logging(top)))))
 }
 
 // CORS middleware for frontend development.
@@ -141,7 +152,8 @@ func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Workspace-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Workspace-ID, X-Trace-ID")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Trace-ID")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == http.MethodOptions {

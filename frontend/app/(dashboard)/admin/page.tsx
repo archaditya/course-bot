@@ -320,6 +320,125 @@ export default function AdminDashboardPage() {
         </motion.div>
       </section>
 
+      {/* ── AI Observability & Latency Waterfall (GenAI Telemetry) ── */}
+      <section style={{ marginBottom: "36px" }}>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card"
+          style={{
+            padding: "24px",
+            borderRadius: "var(--radius-xl)",
+            border: "1px solid rgba(217, 164, 65, 0.2)",
+            background: "linear-gradient(180deg, rgba(28, 27, 24, 0.8), rgba(20, 19, 17, 0.95))",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span className="material-symbols-outlined" style={{ color: "var(--color-primary)", fontSize: "22px" }}>
+                monitoring
+              </span>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700, fontFamily: "var(--font-geist)" }}>
+                  ArchadiLM GenAI Observability & Pipeline Latency
+                </h2>
+                <span style={{ fontSize: "12px", color: "var(--color-on-surface-variant)" }}>
+                  Real-time waterfall telemetry across RAG pipeline stages
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "4px 10px",
+                  borderRadius: "20px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  background: stats?.ai_telemetry?.ai_service_healthy ? "rgba(34, 197, 94, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                  color: stats?.ai_telemetry?.ai_service_healthy ? "#4ADE80" : "#F87171",
+                  border: stats?.ai_telemetry?.ai_service_healthy ? "1px solid rgba(74, 222, 128, 0.3)" : "1px solid rgba(248, 113, 113, 0.3)",
+                }}
+              >
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "currentColor" }} />
+                AI Service: {stats?.ai_telemetry?.ai_service_healthy ? "Healthy" : "Degraded"}
+              </span>
+              <span style={{ fontSize: "12px", color: "var(--color-on-surface-variant)" }}>
+                Total Queries: <strong>{stats?.ai_telemetry?.total_chat_requests ?? 0}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Waterfall Stage Metrics */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "12px" }}>
+            <div style={{ padding: "14px", borderRadius: "var(--radius-lg)", background: "var(--color-surface-container)", border: "1px solid var(--color-outline-variant)" }}>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)", textTransform: "uppercase", fontWeight: 600 }}>
+                1. Guardrails
+              </span>
+              <div style={{ fontSize: "20px", fontWeight: 700, margin: "6px 0 2px", color: "#FBBF24" }}>
+                {stats?.ai_telemetry?.avg_guardrail_latency_ms ? `${stats.ai_telemetry.avg_guardrail_latency_ms.toFixed(0)} ms` : "--"}
+              </div>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)" }}>PII & Injection checks</span>
+            </div>
+
+            <div style={{ padding: "14px", borderRadius: "var(--radius-lg)", background: "var(--color-surface-container)", border: "1px solid var(--color-outline-variant)" }}>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)", textTransform: "uppercase", fontWeight: 600 }}>
+                2. Query Enhance & HyDE
+              </span>
+              <div style={{ fontSize: "20px", fontWeight: 700, margin: "6px 0 2px", color: "#60A5FA" }}>
+                {stats?.ai_telemetry?.avg_enhance_latency_ms ? `${stats.ai_telemetry.avg_enhance_latency_ms.toFixed(0)} ms` : "--"}
+              </div>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)" }}>Step-back & variants</span>
+            </div>
+
+            <div style={{ padding: "14px", borderRadius: "var(--radius-lg)", background: "var(--color-surface-container)", border: "1px solid var(--color-outline-variant)" }}>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)", textTransform: "uppercase", fontWeight: 600 }}>
+                3. LTM Memory Lookup
+              </span>
+              <div style={{ fontSize: "20px", fontWeight: 700, margin: "6px 0 2px", color: "#C084FC" }}>
+                {stats?.ai_telemetry?.avg_memory_latency_ms ? `${stats.ai_telemetry.avg_memory_latency_ms.toFixed(0)} ms` : "--"}
+              </div>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)" }}>Bounded 800ms ceiling</span>
+            </div>
+
+            <div style={{ padding: "14px", borderRadius: "var(--radius-lg)", background: "var(--color-surface-container)", border: "1px solid var(--color-outline-variant)" }}>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)", textTransform: "uppercase", fontWeight: 600 }}>
+                4. RAG Retrieval (Qdrant)
+              </span>
+              <div style={{ fontSize: "20px", fontWeight: 700, margin: "6px 0 2px", color: "#34D399" }}>
+                {stats?.ai_telemetry?.avg_retrieval_latency_ms ? `${stats.ai_telemetry.avg_retrieval_latency_ms.toFixed(0)} ms` : "--"}
+              </div>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)" }}>Embed + RRF + Postgres</span>
+            </div>
+
+            <div style={{ padding: "14px", borderRadius: "var(--radius-lg)", background: "var(--color-surface-container)", border: "1px solid var(--color-outline-variant)" }}>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)", textTransform: "uppercase", fontWeight: 600 }}>
+                5. LLM Generation
+              </span>
+              <div style={{ fontSize: "20px", fontWeight: 700, margin: "6px 0 2px", color: "var(--color-primary)" }}>
+                {stats?.ai_telemetry?.avg_generation_latency_ms ? `${(stats.ai_telemetry.avg_generation_latency_ms / 1000).toFixed(2)} s` : "--"}
+              </div>
+              <span style={{ fontSize: "11px", color: "var(--color-on-surface-variant)" }}>Streaming response</span>
+            </div>
+
+            <div style={{ padding: "14px", borderRadius: "var(--radius-lg)", background: "rgba(217, 164, 65, 0.08)", border: "1px solid rgba(217, 164, 65, 0.3)" }}>
+              <span style={{ fontSize: "11px", color: "var(--color-primary)", textTransform: "uppercase", fontWeight: 700 }}>
+                Average Total Latency
+              </span>
+              <div style={{ fontSize: "20px", fontWeight: 800, margin: "6px 0 2px", color: "var(--color-on-surface)" }}>
+                {stats?.ai_telemetry?.avg_total_latency_ms ? `${(stats.ai_telemetry.avg_total_latency_ms / 1000).toFixed(2)} s` : "--"}
+              </div>
+              <span style={{ fontSize: "11px", color: "var(--color-tertiary)" }}>
+                {stats?.ai_telemetry?.fast_route_hits ?? 0} fast • {stats?.ai_telemetry?.knowledge_route_hits ?? 0} RAG
+              </span>
+            </div>
+          </div>
+        </motion.div>
+      </section>
+
       {/* ── Error Banner ── */}
       <AnimatePresence>
         {actionError && (

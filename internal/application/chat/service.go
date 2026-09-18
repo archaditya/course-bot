@@ -14,6 +14,7 @@ import (
 	"archadilm/internal/domain/provider"
 	"archadilm/internal/domain/repository"
 	"archadilm/internal/infrastructure/llm"
+	"archadilm/internal/infrastructure/observability"
 	rediscache "archadilm/internal/infrastructure/redis"
 )
 
@@ -150,6 +151,14 @@ func (s *Service) Send(
 	var ltmMemories []string
 	usedVector := false
 
+	var (
+		guardrailDuration    time.Duration
+		queryEnhanceDuration time.Duration
+		memorySearchDuration time.Duration
+		retrievalDuration    time.Duration
+		generationDuration   time.Duration
+	)
+
 	// ── Summary Fast-Path: Use pre-generated AI summary from indexing ────
 	// Detects broad summary/overview requests and serves the pre-computed
 	// Document.AISummary + Document.AIOverview instantly, skipping the heavy
@@ -231,12 +240,13 @@ func (s *Service) Send(
 
 		// ── Step 1: Guardrails (concurrent) ─────────────────────────────────
 		var (
-			guardWg             sync.WaitGroup
-			injResult           provider.InjectionResult
-			piiResult           provider.PIIResult
-			errInj, errPII      error
+			guardWg        sync.WaitGroup
+			injResult      provider.InjectionResult
+			piiResult      provider.PIIResult
+			errInj, errPII error
 		)
 
+		guardStart := time.Now()
 		guardWg.Add(2)
 		go func() {
 			defer guardWg.Done()
@@ -247,6 +257,7 @@ func (s *Service) Send(
 			piiResult, errPII = s.guardrails.CheckPII(ctx, userContent)
 		}()
 		guardWg.Wait()
+		guardrailDuration = time.Since(guardStart)
 
 		if errInj != nil {
 			log.Printf("chat: injection check: %v", errInj)
@@ -269,6 +280,7 @@ func (s *Service) Send(
 			errEnhance, errHyde error
 		)
 
+		enhanceStart := time.Now()
 		wg.Add(3)
 		go func() {
 			defer wg.Done()
@@ -280,9 +292,19 @@ func (s *Service) Send(
 		}()
 		go func() {
 			defer wg.Done()
-			ltmMemories, _ = s.aiClient.SearchMemory(ctx, string(ws), userContent)
+			memStart := time.Now()
+			memCtx, memCancel := context.WithTimeout(ctx, 800*time.Millisecond)
+			defer memCancel()
+			memories, errMem := s.aiClient.SearchMemory(memCtx, string(ws), userContent)
+			memorySearchDuration = time.Since(memStart)
+			if errMem != nil {
+				log.Printf("chat: memory search bypassed: %v", errMem)
+			} else {
+				ltmMemories = memories
+			}
 		}()
 		wg.Wait()
+		queryEnhanceDuration = time.Since(enhanceStart)
 
 		queryVariants := []string{userContent}
 		if errEnhance != nil {
@@ -303,6 +325,7 @@ func (s *Service) Send(
 		}
 
 		// ── Step 4: Batch Vector Embeddings ──────────────────────────────────
+		retrievalStart := time.Now()
 		allVecs, err := s.embedder.Embed(ctx, queryVariants)
 		if err != nil {
 			return nil, fmt.Errorf("chat: embed queries: %w", err)
@@ -412,6 +435,7 @@ func (s *Service) Send(
 		if context_ == "" {
 			context_ = "No relevant material was found for this question."
 		}
+		retrievalDuration = time.Since(retrievalStart)
 	}
 
 	// ── Step 9: Conversational History (STM) & Mem0 Long-Term Memory (LTM) ─────
@@ -453,6 +477,7 @@ func (s *Service) Send(
 		}
 	}()
 
+	genStart := time.Now()
 	for attempt := 1; attempt <= s.maxRetries; attempt++ {
 		prompt := provider.Prompt{
 			System: `You are a knowledgeable study partner having a one-on-one conversation. Answer naturally and directly. Always remember details the user shares about themselves (like their name, background, or preferences) from their Long-Term Memory facts and past conversation messages.
@@ -483,6 +508,7 @@ FORMATTING RULES:
 		bestContent = fullContent
 		break
 	}
+	generationDuration = time.Since(genStart)
 
 	// If all retries failed, send a friendly message instead of leaving the stream stuck
 	if bestContent == "" {
@@ -541,20 +567,40 @@ FORMATTING RULES:
 		_ = s.citations.CreateBatch(ctx, cits)
 	}
 
-	// Log clear structured telemetry
+	// Log clear structured telemetry and record metrics
+	observability.RecordChatTelemetry(observability.ChatSpanTimings{
+		IsFastRoute:          isFastRoute,
+		IsKnowledgeRoute:     usedVector,
+		GuardrailDuration:    guardrailDuration,
+		QueryEnhanceDuration: queryEnhanceDuration,
+		MemorySearchDuration: memorySearchDuration,
+		RetrievalDuration:    retrievalDuration,
+		GenerationDuration:   generationDuration,
+		TotalLatency:         time.Since(startTime),
+	})
+
 	previewText := strings.ReplaceAll(bestContent, "\n", " ")
 	if len(previewText) > 100 {
 		previewText = previewText[:100] + "..."
 	}
 
+	traceID := observability.TraceIDFromContext(ctx)
 	log.Printf("\n"+
 		"=================== [CHAT TELEMETRY METRICS] ===================\n"+
+		"| Trace ID       : %s\n"+
 		"| FastRoute      : %t\n"+
 		"| Vector Search  : %t (Citations: %d)\n"+
-		"| Latency        : %v\n"+
+		"| Guardrails     : %v\n"+
+		"| Query Enhance  : %v\n"+
+		"| Memory Lookup  : %v\n"+
+		"| RAG Retrieval  : %v\n"+
+		"| LLM Generation : %v\n"+
+		"| Total Latency  : %v\n"+
 		"| Output Preview : \"%s\"\n"+
 		"================================================================\n",
-		isFastRoute, usedVector, len(citResults), time.Since(startTime), previewText)
+		traceID, isFastRoute, usedVector, len(citResults),
+		guardrailDuration, queryEnhanceDuration, memorySearchDuration,
+		retrievalDuration, generationDuration, time.Since(startTime), previewText)
 
 
 	result := &MessageResult{

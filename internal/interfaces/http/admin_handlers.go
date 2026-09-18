@@ -8,6 +8,7 @@ import (
 
 	"archadilm/internal/domain/entities"
 	"archadilm/internal/domain/repository"
+	"archadilm/internal/infrastructure/observability"
 	"archadilm/internal/infrastructure/redis"
 )
 
@@ -42,6 +43,38 @@ func (h *AdminHandler) getStats(w http.ResponseWriter, r *http.Request) {
 		log.Printf("api: admin get stats error: %v", err)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not fetch system stats.")
 		return
+	}
+
+	totalReqs := observability.GlobalMetrics.ChatRequestsTotal.Load()
+	var (
+		avgGuardrailMs  float64
+		avgEnhanceMs    float64
+		avgMemoryMs     float64
+		avgRetrievalMs  float64
+		avgGenerationMs float64
+		avgTotalMs      float64
+	)
+	if totalReqs > 0 {
+		avgGuardrailMs = float64(observability.GlobalMetrics.ChatGuardrailDurationNs.Load()) / float64(totalReqs) / 1e6
+		avgEnhanceMs = float64(observability.GlobalMetrics.ChatQueryEnhanceDurationNs.Load()) / float64(totalReqs) / 1e6
+		avgMemoryMs = float64(observability.GlobalMetrics.ChatMemorySearchDurationNs.Load()) / float64(totalReqs) / 1e6
+		avgRetrievalMs = float64(observability.GlobalMetrics.ChatRetrievalDurationNs.Load()) / float64(totalReqs) / 1e6
+		avgGenerationMs = float64(observability.GlobalMetrics.ChatGenerationDurationNs.Load()) / float64(totalReqs) / 1e6
+		avgTotalMs = float64(observability.GlobalMetrics.ChatTotalLatencyNs.Load()) / float64(totalReqs) / 1e6
+	}
+
+	stats.AITelemetry = &entities.AISystemTelemetry{
+		TotalChatRequests:      totalReqs,
+		FastRouteHits:          observability.GlobalMetrics.ChatFastRouteHits.Load(),
+		KnowledgeRouteHits:     observability.GlobalMetrics.ChatKnowledgeRouteHits.Load(),
+		AvgGuardrailLatencyMs:  avgGuardrailMs,
+		AvgEnhanceLatencyMs:    avgEnhanceMs,
+		AvgMemoryLatencyMs:     avgMemoryMs,
+		AvgRetrievalLatencyMs:  avgRetrievalMs,
+		AvgGenerationLatencyMs: avgGenerationMs,
+		AvgTotalLatencyMs:      avgTotalMs,
+		AIServiceErrors:        observability.GlobalMetrics.AIServiceErrors.Load(),
+		AIServiceHealthy:       true,
 	}
 
 	jsonBytes, _ := json.Marshal(stats)
