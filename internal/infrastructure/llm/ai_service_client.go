@@ -236,6 +236,9 @@ func (c *Client) Stream(ctx context.Context, prompt provider.Prompt) (<-chan pro
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/plain")
+	if traceID := observability.TraceIDFromContext(ctx); traceID != "" {
+		req.Header.Set(observability.TraceIDHeader, traceID)
+	}
 
 	streamClient := &http.Client{Timeout: 45 * time.Second}
 	resp, err := streamClient.Do(req)
@@ -534,6 +537,9 @@ func (c *Client) postJSON(ctx context.Context, path string, body, out any) error
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if traceID := observability.TraceIDFromContext(ctx); traceID != "" {
+		req.Header.Set(observability.TraceIDHeader, traceID)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {

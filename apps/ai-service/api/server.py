@@ -45,8 +45,16 @@ from api.schemas import (
     MemoryAddRequest, MemoryAddResponse,
 )
 
+from app.observability import (
+    TraceContextMiddleware,
+    telemetry_tracker,
+    get_current_trace_id,
+)
+from app.evaluator.golden_dataset import run_golden_benchmark
 
-app = FastAPI(title="archadiLM AI Service", version="0.2.0")
+
+app = FastAPI(title="archadiLM AI Service", version="0.3.0")
+app.add_middleware(TraceContextMiddleware)
 
 # Initialize providers — Model Tiering Strategy
 # fast_provider  (Groq llama-3.1-8b): classification, routing, query enhancement
@@ -368,3 +376,48 @@ async def web_search(request: WebSearchRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Tier 2: Operational & Cost Telemetry Endpoints ─────────────────────────
+
+@app.get("/telemetry/metrics")
+async def get_telemetry_metrics():
+    """Retrieve operational metrics, token consumption, and cost estimates."""
+    return telemetry_tracker.get_metrics_summary()
+
+
+@app.get("/telemetry/traces")
+async def get_recent_traces(limit: int = 25):
+    """Retrieve recent distributed trace records with per-span token and latency breakdown."""
+    return {
+        "count": min(limit, len(telemetry_tracker.recent_spans)),
+        "traces": telemetry_tracker.get_recent_traces(limit=limit),
+    }
+
+
+# ── Tier 3: AI Quality & Evaluation Endpoints ──────────────────────────────
+
+@app.post("/evaluate/detailed")
+async def evaluate_detailed(request: EvaluationRequest):
+    """Multi-dimensional RAG evaluation: faithfulness, relevance, context precision."""
+    try:
+        detail = await evaluator.evaluate_detailed(
+            query=request.query,
+            response=request.response,
+            context=request.context,
+            prompt_version=request.prompt_version,
+        )
+        return detail.model_dump()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/eval/benchmark")
+async def trigger_golden_benchmark():
+    """Run automated golden dataset regression benchmark against current pipeline."""
+    try:
+        report = await run_golden_benchmark(generator, evaluator)
+        return report
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

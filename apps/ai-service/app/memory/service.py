@@ -1,10 +1,16 @@
 import os
+import asyncio
 import logging
 from typing import List
 from config.settings import settings
 
 # Explicit safeguard before mem0 import
 os.environ["MEM0_TELEMETRY"] = "true" if settings.mem0_telemetry else "false"
+
+# Suppress harmless optional dependency warnings from mem0 (we use OpenAI LLM + Embeddings)
+logging.getLogger("mem0.vector_stores.qdrant").setLevel(logging.ERROR)
+logging.getLogger("mem0.utils.spacy_models").setLevel(logging.ERROR)
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -52,9 +58,7 @@ class WorkspaceMemoryService:
                 except Exception:
                     self.memory = None
 
-    async def search_memory(self, workspace_id: str, query: str) -> List[str]:
-        if not self.memory:
-            return []
+    def _sync_search(self, workspace_id: str, query: str) -> List[str]:
         try:
             results = self.memory.search(query=query, filters={"user_id": workspace_id})
             if isinstance(results, dict) and "results" in results:
@@ -66,9 +70,7 @@ class WorkspaceMemoryService:
             logger.error(f"Mem0 search error: {e}")
             return []
 
-    async def add_memory(self, workspace_id: str, user_text: str, assistant_text: str) -> List[str]:
-        if not self.memory:
-            return []
+    def _sync_add(self, workspace_id: str, user_text: str, assistant_text: str) -> List[str]:
         try:
             messages = [
                 {"role": "user", "content": user_text},
@@ -79,3 +81,13 @@ class WorkspaceMemoryService:
         except Exception as e:
             logger.error(f"Mem0 add error: {e}")
             return []
+
+    async def search_memory(self, workspace_id: str, query: str) -> List[str]:
+        if not self.memory:
+            return []
+        return await asyncio.to_thread(self._sync_search, workspace_id, query)
+
+    async def add_memory(self, workspace_id: str, user_text: str, assistant_text: str) -> List[str]:
+        if not self.memory:
+            return []
+        return await asyncio.to_thread(self._sync_add, workspace_id, user_text, assistant_text)

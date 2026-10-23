@@ -1,5 +1,5 @@
 # Step 1: Cache dependencies layer
-FROM golang:alpine AS builder
+FROM golang:1.25.9-alpine AS builder
 
 WORKDIR /app
 
@@ -15,9 +15,9 @@ COPY apps/worker/ ./apps/worker/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /bin/worker ./apps/worker/cmd/worker
 
 # Step 2: Minimal runtime image
-FROM alpine:3.20
+FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata && apk --no-cache upgrade
 WORKDIR /app
 
 COPY --from=builder /bin/worker /app/worker
